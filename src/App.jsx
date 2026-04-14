@@ -158,6 +158,22 @@ const callAnalysisAPI = async (horizonData) => {
   return response.json();
 };
 
+// ─── AI SCORING ENGINE ─────────────────────────────────────────────────────
+const callScoringAPI = async ({ question, answer, context, category, competitorContext, horizonContext }) => {
+  const response = await fetch("/api/score", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, answer, context, category, competitorContext, horizonContext }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error(err.error || `API Error ${response.status}`);
+  }
+
+  return response.json();
+};
+
 // ─── MODULE 1: THE HORIZON ──────────────────────────────────────────────────
 const HorizonModule = ({ data, setData, onComplete }) => {
   const sections = [
@@ -389,6 +405,11 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
   const [responses, setResponses] = useState(data.interrogationResponses || {});
   const [scores, setScores] = useState(data.interrogationScores || {});
   const [competitorFilter, setCompetitorFilter] = useState("all");
+  const [evaluations, setEvaluations] = useState(data.evaluations || {}); // AI evaluations keyed by responseKey
+  const [followUpResponses, setFollowUpResponses] = useState(data.followUpResponses || {}); // Follow-up answers keyed by responseKey
+  const [pmScores, setPmScores] = useState(data.pmScores || {}); // PM self-ratings before AI scores
+  const [isScoring, setIsScoring] = useState(false);
+  const [scoringError, setScoringError] = useState(null);
 
   // Persist Gauntlet internal state back to parent on changes
   useEffect(() => {
@@ -400,11 +421,14 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
         pmRatings,
         interrogationResponses: responses,
         interrogationScores: scores,
+        evaluations,
+        followUpResponses,
+        pmScores,
       }));
     }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisResult, manualCompetitors, pmRatings, responses, scores]);
+  }, [analysisResult, manualCompetitors, pmRatings, responses, scores, evaluations, followUpResponses, pmScores]);
 
   // Challenger questions from AI or fallback
   const challengerQuestions = useMemo(() => {
@@ -954,71 +978,242 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
             </>
           )}
 
+          {/* Answer Input */}
           <textarea
             value={responses[responseKey] || ""}
             onChange={(e) => setResponses({ ...responses, [responseKey]: e.target.value })}
             placeholder="Defend your position. Be specific — hand-waving will be exposed..."
             rows={4}
-            className="w-full rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none mb-4"
+            disabled={!!evaluations[responseKey]}
+            className="w-full rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none mb-4 disabled:opacity-60 disabled:bg-gray-50"
             style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
             onFocus={(e) => e.target.style.borderColor = BRAND.red}
             onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
           />
 
-          {/* Immediate Answer Value Assessment */}
-          <div className="rounded-xl border-2 p-4 mb-4 space-y-3" style={{ borderColor: BRAND.midGray }}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: BRAND.navy }}>Rate Your Answer</span>
-              {scores[responseKey] && (
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{
-                  backgroundColor: scores[responseKey] <= 2 ? "#fef2f2" : scores[responseKey] <= 3 ? "#fffbeb" : "#f0fdf4",
-                  color: scores[responseKey] <= 2 ? "#dc2626" : scores[responseKey] <= 3 ? "#d97706" : "#16a34a",
-                }}>
-                  {scores[responseKey] <= 2 ? "VULNERABILITY DETECTED" : scores[responseKey] <= 3 ? "NEEDS STRENGTHENING" : scores[responseKey] >= 4 ? "DEFENSIBLE" : ""}
-                </span>
+          {/* Step 1: PM Self-Rating (before AI sees it) */}
+          {!evaluations[responseKey] && responses[responseKey]?.trim() && (
+            <div className="rounded-xl border-2 p-4 mb-4 space-y-3" style={{ borderColor: pmScores[responseKey] ? BRAND.red : BRAND.midGray, backgroundColor: pmScores[responseKey] ? `${BRAND.red}03` : "white" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: BRAND.navy }}>Step 1: Rate Your Own Answer</span>
+                {pmScores[responseKey] && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${BRAND.red}10`, color: BRAND.red }}>
+                    LOCKED IN — NOW LET AI JUDGE
+                  </span>
+                )}
+              </div>
+              <p className="text-xs" style={{ color: BRAND.textMuted }}>Be honest — the AI will score you next, and we'll compare.</p>
+              <div className="flex gap-2">
+                {[
+                  { val: 1, label: "No Answer", desc: "Can't defend this" },
+                  { val: 2, label: "Weak", desc: "Hand-waving" },
+                  { val: 3, label: "Partial", desc: "Some evidence" },
+                  { val: 4, label: "Strong", desc: "Data-backed" },
+                  { val: 5, label: "Bulletproof", desc: "Unassailable" },
+                ].map((option) => (
+                  <button
+                    key={option.val}
+                    onClick={() => setPmScores({ ...pmScores, [responseKey]: option.val })}
+                    disabled={!!evaluations[responseKey]}
+                    className="flex-1 rounded-lg border-2 py-2 px-1 text-center transition-all"
+                    style={{
+                      borderColor: pmScores[responseKey] === option.val ? BRAND.red : BRAND.midGray,
+                      backgroundColor: pmScores[responseKey] === option.val ? `${BRAND.red}10` : "white",
+                    }}
+                  >
+                    <div className="text-xs font-bold" style={{ color: pmScores[responseKey] === option.val ? BRAND.red : BRAND.navy }}>{option.label}</div>
+                    <div className="text-[10px]" style={{ color: BRAND.textMuted }}>{option.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Submit for AI Evaluation (requires answer + self-rating) */}
+          {!evaluations[responseKey] && !isScoring && pmScores[responseKey] && responses[responseKey]?.trim() && (
+            <button
+              onClick={async () => {
+                setIsScoring(true);
+                setScoringError(null);
+                try {
+                  const competitorSummary = (analysisResult?.competitors || [])
+                    .map(c => `${c.name} (${c.category}, risk: ${c.aiRiskRating}): ${c.description}`)
+                    .join("\n");
+                  const horizonSummary = `Mission: ${horizonData.mission}\nAnti-Mission: ${horizonData.antiMission}\nTailwinds: ${horizonData.tailwinds}\nHeadwinds: ${horizonData.headwinds}\nCustomer Pain: ${horizonData.customerPain}`;
+                  const evaluation = await callScoringAPI({
+                    question: currentQ?.question || "",
+                    answer: responses[responseKey],
+                    context: currentQ?.context || "",
+                    category: cat.label,
+                    competitorContext: competitorSummary,
+                    horizonContext: horizonSummary,
+                  });
+                  setEvaluations({ ...evaluations, [responseKey]: evaluation });
+                  setScores({ ...scores, [responseKey]: evaluation.score });
+                } catch (err) {
+                  setScoringError(err.message);
+                } finally {
+                  setIsScoring(false);
+                }
+              }}
+              className="w-full rounded-xl px-6 py-3 text-sm font-bold text-white transition-all flex items-center justify-center gap-2 mb-4"
+              style={{ backgroundColor: BRAND.navy }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = BRAND.red}
+              onMouseLeave={(e) => e.target.style.backgroundColor = BRAND.navy}
+            >
+              <Brain size={16} />
+              Submit for AI Evaluation — You Rated Yourself {pmScores[responseKey]}/5
+            </button>
+          )}
+
+          {/* Scoring in Progress */}
+          {isScoring && (
+            <div className="rounded-xl border-2 p-6 mb-4 flex flex-col items-center gap-3" style={{ borderColor: BRAND.midGray }}>
+              <Loader2 size={24} className="animate-spin" style={{ color: BRAND.red }} />
+              <p className="text-sm font-semibold" style={{ color: BRAND.navy }}>AI is evaluating your defense...</p>
+              <p className="text-xs" style={{ color: BRAND.textMuted }}>Checking for hand-waving, logical gaps, and competitive blind spots</p>
+            </div>
+          )}
+
+          {scoringError && (
+            <div className="rounded-xl border-2 p-4 mb-4" style={{ borderColor: "#fecaca", backgroundColor: "#fef2f2" }}>
+              <p className="text-sm font-semibold text-red-600 flex items-center gap-2">
+                <AlertTriangle size={16} /> Evaluation Error
+              </p>
+              <p className="text-xs text-red-500 mt-1">{scoringError}</p>
+              <button
+                onClick={() => setScoringError(null)}
+                className="mt-2 text-xs font-semibold underline"
+                style={{ color: BRAND.red }}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {/* AI Evaluation Result */}
+          {evaluations[responseKey] && (() => {
+            const aiScore = evaluations[responseKey].score;
+            const pmScore = pmScores[responseKey] || 0;
+            const delta = pmScore - aiScore;
+            const deltaLabel = delta > 1 ? "OVERCONFIDENT" : delta > 0 ? "SLIGHTLY OPTIMISTIC" : delta === 0 ? "WELL CALIBRATED" : delta >= -1 ? "UNDERSELLING YOURSELF" : "MORE DEFENSIBLE THAN YOU THINK";
+            const deltaColor = delta > 1 ? "#dc2626" : delta > 0 ? "#d97706" : delta === 0 ? "#16a34a" : "#2563eb";
+            return (
+            <div className="space-y-4 mb-4">
+              {/* PM vs AI Score Comparison */}
+              <div className="rounded-xl border-2 p-4" style={{ borderColor: BRAND.midGray }}>
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-bold uppercase tracking-wider" style={{ color: BRAND.navy }}>Score Comparison</span>
+                  <span className="text-xs font-black px-3 py-1 rounded-full" style={{ backgroundColor: `${deltaColor}15`, color: deltaColor, border: `1px solid ${deltaColor}40` }}>
+                    {deltaLabel}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-4 items-center">
+                  {/* PM Score */}
+                  <div className="text-center rounded-xl p-3" style={{ backgroundColor: BRAND.lightGray }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: BRAND.textMuted }}>Your Rating</p>
+                    <p className="text-3xl font-black" style={{ color: BRAND.navy }}>{pmScore}</p>
+                    <p className="text-[10px]" style={{ color: BRAND.textMuted }}>/5</p>
+                  </div>
+                  {/* Delta */}
+                  <div className="text-center">
+                    <div className="text-2xl font-black" style={{ color: deltaColor }}>
+                      {delta > 0 ? `+${delta}` : delta === 0 ? "=" : delta}
+                    </div>
+                    <p className="text-[10px] font-bold" style={{ color: deltaColor }}>
+                      {delta > 0 ? "GAP" : delta === 0 ? "MATCH" : "DELTA"}
+                    </p>
+                  </div>
+                  {/* AI Score */}
+                  <div className="text-center rounded-xl p-3" style={{
+                    backgroundColor: aiScore <= 2 ? "#fef2f2" : aiScore <= 3 ? "#fffbeb" : "#f0fdf4",
+                  }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: BRAND.textMuted }}>AI Rating</p>
+                    <p className="text-3xl font-black" style={{ color: aiScore <= 2 ? "#dc2626" : aiScore <= 3 ? "#d97706" : "#16a34a" }}>{aiScore}</p>
+                    <p className="text-[10px]" style={{ color: BRAND.textMuted }}>/5</p>
+                  </div>
+                </div>
+                {delta > 1 && (
+                  <div className="mt-3 rounded-lg p-2 flex items-center gap-2" style={{ backgroundColor: "#fef2f2" }}>
+                    <AlertTriangle size={12} style={{ color: "#dc2626" }} />
+                    <p className="text-[11px] font-semibold" style={{ color: "#dc2626" }}>
+                      Blind spot detected — you think this is stronger than the evidence supports.
+                    </p>
+                  </div>
+                )}
+                {delta < -1 && (
+                  <div className="mt-3 rounded-lg p-2 flex items-center gap-2" style={{ backgroundColor: "#eff6ff" }}>
+                    <Star size={12} style={{ color: "#2563eb" }} />
+                    <p className="text-[11px] font-semibold" style={{ color: "#2563eb" }}>
+                      You're underselling this defense — the AI sees more strength here than you do. Use it.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* AI Assessment Detail */}
+              <div className="rounded-xl border-2 p-4" style={{
+                borderColor: aiScore <= 2 ? "#fecaca" : aiScore <= 3 ? "#fde68a" : "#bbf7d0",
+                backgroundColor: aiScore <= 2 ? "#fef2f2" : aiScore <= 3 ? "#fffbeb" : "#f0fdf4",
+              }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Brain size={16} style={{ color: BRAND.navy }} />
+                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: BRAND.navy }}>AI Assessment</span>
+                  </div>
+                  <span className="text-sm font-black px-3 py-1 rounded-full" style={{
+                    backgroundColor: aiScore <= 2 ? "#dc2626" : aiScore <= 3 ? "#d97706" : "#16a34a",
+                    color: "white",
+                  }}>
+                    {aiScore}/5 — {evaluations[responseKey].label}
+                  </span>
+                </div>
+                <p className="text-sm leading-relaxed" style={{ color: BRAND.textPrimary }}>
+                  {evaluations[responseKey].assessment}
+                </p>
+                {evaluations[responseKey].gaps?.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "#dc2626" }}>Gaps Identified:</p>
+                    {evaluations[responseKey].gaps.map((gap, gi) => (
+                      <p key={gi} className="text-xs flex items-start gap-1.5" style={{ color: BRAND.textSecondary }}>
+                        <AlertTriangle size={10} className="mt-0.5 shrink-0" style={{ color: "#dc2626" }} />
+                        {gap}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* AI Follow-Up Question */}
+              {evaluations[responseKey].followUp && (
+                <div className="rounded-xl border-2 p-4 space-y-3" style={{ borderColor: BRAND.red, backgroundColor: `${BRAND.red}03` }}>
+                  <div className="flex items-center gap-2">
+                    <Flame size={14} style={{ color: BRAND.red }} />
+                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: BRAND.red }}>AI Follow-Up Challenge</span>
+                  </div>
+                  <p className="text-sm font-semibold" style={{ color: BRAND.navy }}>
+                    {evaluations[responseKey].followUp}
+                  </p>
+                  {evaluations[responseKey].followUpContext && (
+                    <p className="text-xs italic" style={{ color: BRAND.textMuted }}>
+                      {evaluations[responseKey].followUpContext}
+                    </p>
+                  )}
+                  <textarea
+                    value={followUpResponses[responseKey] || ""}
+                    onChange={(e) => setFollowUpResponses({ ...followUpResponses, [responseKey]: e.target.value })}
+                    placeholder="Dig deeper. The AI found a crack in your defense — seal it or acknowledge the gap..."
+                    rows={3}
+                    className="w-full rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none"
+                    style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
+                    onFocus={(e) => e.target.style.borderColor = BRAND.red}
+                    onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
+                  />
+                </div>
               )}
             </div>
-            <div className="flex gap-2">
-              {[
-                { val: 1, label: "No Answer", desc: "Can't defend this" },
-                { val: 2, label: "Weak", desc: "Hand-waving" },
-                { val: 3, label: "Partial", desc: "Some evidence" },
-                { val: 4, label: "Strong", desc: "Data-backed" },
-                { val: 5, label: "Bulletproof", desc: "Unassailable" },
-              ].map((option) => (
-                <button
-                  key={option.val}
-                  onClick={() => setScores({ ...scores, [responseKey]: option.val })}
-                  className="flex-1 rounded-lg border-2 py-2 px-1 text-center transition-all"
-                  style={{
-                    borderColor: scores[responseKey] === option.val ? BRAND.red : BRAND.midGray,
-                    backgroundColor: scores[responseKey] === option.val ? `${BRAND.red}10` : "white",
-                  }}
-                >
-                  <div className="text-xs font-bold" style={{ color: scores[responseKey] === option.val ? BRAND.red : BRAND.navy }}>{option.label}</div>
-                  <div className="text-[10px]" style={{ color: BRAND.textMuted }}>{option.desc}</div>
-                </button>
-              ))}
-            </div>
-            {scores[responseKey] && scores[responseKey] <= 2 && responses[responseKey] && (
-              <div className="rounded-lg p-3 flex items-start gap-2" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
-                <AlertTriangle size={14} className="mt-0.5 shrink-0" style={{ color: "#dc2626" }} />
-                <div>
-                  <p className="text-xs font-bold" style={{ color: "#dc2626" }}>Strategic Gap Identified</p>
-                  <p className="text-[11px]" style={{ color: "#991b1b" }}>This weak spot will surface in competitive deals. Flag it for your strategy sprint.</p>
-                </div>
-              </div>
-            )}
-            {scores[responseKey] && scores[responseKey] >= 4 && responses[responseKey] && (
-              <div className="rounded-lg p-3 flex items-start gap-2" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-                <Shield size={14} className="mt-0.5 shrink-0" style={{ color: "#16a34a" }} />
-                <div>
-                  <p className="text-xs font-bold" style={{ color: "#16a34a" }}>Competitive Moat Confirmed</p>
-                  <p className="text-[11px]" style={{ color: "#166534" }}>Use this defense in sales enablement and competitive positioning docs.</p>
-                </div>
-              </div>
-            )}
-          </div>
+          );
+          })()}
 
           {/* Navigation */}
           <div className="flex justify-between pt-2 border-t-2" style={{ borderColor: BRAND.midGray }}>
@@ -1057,19 +1252,38 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
             </h4>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
               {INTERROGATION_CATEGORIES.map((c) => {
-                const catScores = Object.entries(scores)
+                const aiCatScores = Object.entries(scores)
                   .filter(([k]) => k.startsWith(c.id))
                   .map(([, v]) => v);
-                const avg = catScores.length > 0 ? (catScores.reduce((a, b) => a + b, 0) / catScores.length) : 0;
+                const pmCatScores = Object.entries(pmScores)
+                  .filter(([k]) => k.startsWith(c.id))
+                  .map(([, v]) => v);
+                const aiAvg = aiCatScores.length > 0 ? (aiCatScores.reduce((a, b) => a + b, 0) / aiCatScores.length) : 0;
+                const pmAvg = pmCatScores.length > 0 ? (pmCatScores.reduce((a, b) => a + b, 0) / pmCatScores.length) : 0;
+                const delta = pmAvg - aiAvg;
                 return (
                   <div key={c.id} className="rounded-xl border-2 p-3" style={{ borderColor: BRAND.midGray }}>
                     <p className="text-xs font-semibold mb-1" style={{ color: BRAND.textMuted }}>{c.label}</p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold" style={{ color: avg <= 2 ? "#dc2626" : avg <= 3 ? "#d97706" : "#16a34a" }}>
-                        {avg.toFixed(1)}
-                      </span>
-                      <span className="text-xs" style={{ color: BRAND.textMuted }}>/5</span>
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <span className="text-lg font-bold" style={{ color: aiAvg <= 2 ? "#dc2626" : aiAvg <= 3 ? "#d97706" : "#16a34a" }}>
+                          {aiAvg.toFixed(1)}
+                        </span>
+                        <span className="text-[10px] ml-0.5" style={{ color: BRAND.textMuted }}>AI</span>
+                      </div>
+                      <div className="text-[10px] font-bold" style={{ color: BRAND.textMuted }}>vs</div>
+                      <div>
+                        <span className="text-lg font-bold" style={{ color: BRAND.navy }}>
+                          {pmAvg.toFixed(1)}
+                        </span>
+                        <span className="text-[10px] ml-0.5" style={{ color: BRAND.textMuted }}>You</span>
+                      </div>
                     </div>
+                    {Math.abs(delta) > 0.5 && (
+                      <p className="text-[10px] font-bold mt-1" style={{ color: delta > 0 ? "#dc2626" : "#2563eb" }}>
+                        {delta > 0 ? `Blind spot (+${delta.toFixed(1)})` : `Underselling (${delta.toFixed(1)})`}
+                      </p>
+                    )}
                   </div>
                 );
               })}
@@ -1080,6 +1294,9 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
                   ...data,
                   interrogationResponses: responses,
                   interrogationScores: scores,
+                  evaluations,
+                  followUpResponses,
+                  pmScores,
                   competitors: allCompetitors,
                   pmRatings,
                   analysisResult,
