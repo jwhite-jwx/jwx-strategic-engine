@@ -73,7 +73,7 @@ function buildPrompt(horizonData) {
 
 ## Your Task
 
-Provide a comprehensive competitive analysis in the following JSON format. Be thorough — identify 10-15+ competitors across all categories. For each competitor, provide genuine competitive intelligence, not generic descriptions.
+Provide a comprehensive competitive analysis in the following JSON format. Be thorough — identify 10-15+ competitors across all categories. Generate exactly 12 challenger questions (2 per category). For each competitor, provide genuine competitive intelligence, not generic descriptions.
 
 Return ONLY valid JSON with this structure:
 {
@@ -101,43 +101,37 @@ Return ONLY valid JSON with this structure:
   ],
   "challengerQuestions": {
     "moat": [
-      {"question": "Tough question about competitive moat based on this specific landscape", "context": "Why this question matters given the competitors identified"},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
+      {"question": "A brutally specific question about competitive defensibility that names a real competitor from your analysis above and forces the PM to explain exactly why customers wouldn't switch", "context": "Cite the specific competitive data point that makes this question dangerous"},
+      {"question": "A second pointed moat question referencing a different competitor or market dynamic", "context": "Why this is an existential concern"}
     ],
     "market": [
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
+      {"question": "A pointed question about market timing or sizing that challenges an assumption in their strategy with a specific data point or trend", "context": "The specific market reality that contradicts their assumption"},
+      {"question": "A second market question that forces them to confront a headwind they may be underestimating", "context": "Why this headwind could be fatal"}
     ],
     "execution": [
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
+      {"question": "A specific question about whether their team/tech can actually deliver what they're promising, referencing a competitor who already has this capability", "context": "The execution gap that makes this dangerous"},
+      {"question": "A second execution question about speed-to-market or technical debt", "context": "Why timing matters here"}
     ],
     "customer": [
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
+      {"question": "A pointed question that challenges whether the customer pain they identified is real, acute, and monetizable — not just a nice-to-have", "context": "Evidence that suggests the pain might not be as severe as claimed"},
+      {"question": "A second customer question about switching costs or adoption barriers", "context": "Why customers might not actually switch"}
     ],
     "economics": [
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
+      {"question": "A specific question about unit economics sustainability, referencing a competitor's pricing or a market pricing trend that threatens their margins", "context": "The economic pressure that makes this urgent"},
+      {"question": "A second economics question about CAC, retention, or margin compression", "context": "Why the numbers might not work"}
     ],
     "strategy": [
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
+      {"question": "A pointed question about strategic leverage that challenges whether their differentiation is real or just marketing, citing a specific competitor who claims similar positioning", "context": "The strategic vulnerability this exposes"},
+      {"question": "A second strategy question about what happens when a larger player copies their approach", "context": "Why this is a realistic scenario"}
     ]
   }
 }
 
-Be aggressive and thorough. This is a challenger exercise — the questions should be uncomfortable and force the PM to defend their strategy against real competitive threats you've identified.`;
+CRITICAL INSTRUCTIONS FOR CHALLENGER QUESTIONS:
+- Generate EXACTLY 2 questions per category (12 total)
+- Every question MUST reference specific competitors, data points, or market dynamics from YOUR analysis above — no generic questions
+- Questions should be uncomfortable, pointed, and impossible to answer with hand-waving
+- Each question should feel like it came from the smartest competitor's chief strategist
+- The "context" field must cite specific competitive intelligence that makes the question dangerous
+- If a question could apply to any company in any market, it's too generic — rewrite it`;
 }
