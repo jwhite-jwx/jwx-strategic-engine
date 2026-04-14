@@ -49,10 +49,9 @@ const PRICING_TEMPLATES = {
 };
 
 // ─── JW PLAYER LOGO ────────────────────────────────────────────────────────
-// Place the actual JW Player logo at public/jw-logo.png in the repo
 const JWLogo = ({ size = 32 }) => (
   <img
-    src="/jw-logo.png"
+    src="https://static-www.adweek.com/wp-content/uploads/2025/12/JWX-Main-Logo-1-2.png?w=640"
     alt="JW Player"
     width={size}
     height={size}
