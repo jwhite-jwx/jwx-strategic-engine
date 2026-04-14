@@ -143,123 +143,19 @@ const RiskBadge = ({ level }) => {
 };
 
 // ─── AI ANALYSIS ENGINE ─────────────────────────────────────────────────────
-const buildAnalysisPrompt = (horizonData) => {
-  return `You are a world-class competitive intelligence analyst. Based on the following product strategy information, perform a DEEP competitive landscape analysis.
-
-## Product Strategy Context
-
-**Mission:** ${horizonData.mission || "Not provided"}
-**Anti-Mission (What we refuse to do):** ${horizonData.antiMission || "Not provided"}
-**Strategic Tenets:** ${(horizonData.tenets || []).filter(Boolean).join(", ") || "Not provided"}
-**Market Tailwinds:** ${horizonData.tailwinds || "Not provided"}
-**Market Headwinds:** ${horizonData.headwinds || "Not provided"}
-**Core Customer Pain:** ${horizonData.customerPain || "Not provided"}
-**OKRs:** ${JSON.stringify(horizonData.okrs?.filter(o => o.objective) || [])}
-
-## Your Task
-
-Provide a comprehensive competitive analysis in the following JSON format. Be thorough — identify 10-15+ competitors across all categories. For each competitor, provide genuine competitive intelligence, not generic descriptions.
-
-Return ONLY valid JSON with this structure:
-{
-  "landscapeSummary": "2-3 paragraph executive summary of the competitive landscape, key dynamics, and strategic implications",
-  "competitors": [
-    {
-      "name": "Company Name",
-      "category": "direct" | "indirect" | "emerging" | "adjacent",
-      "description": "What they do and why they're relevant (2-3 sentences)",
-      "strengths": ["strength1", "strength2", "strength3"],
-      "weaknesses": ["weakness1", "weakness2"],
-      "threat": "What specific threat they pose to your strategy",
-      "aiRiskRating": "critical" | "high" | "medium" | "low" | "minimal",
-      "riskRationale": "Why this risk level — be specific about the competitive dynamics"
-    }
-  ],
-  "marketDynamics": {
-    "consolidationTrend": "Description of M&A and consolidation patterns",
-    "emergingThreats": "New entrants or technology shifts that could disrupt",
-    "regulatoryFactors": "Regulatory environment impact",
-    "switchingCosts": "Assessment of switching costs in this market"
-  },
-  "strategicRecommendations": [
-    "Specific actionable recommendation based on the analysis"
-  ],
-  "challengerQuestions": {
-    "moat": [
-      {"question": "Tough question about competitive moat based on this specific landscape", "context": "Why this question matters given the competitors identified"},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
-    ],
-    "market": [
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
-    ],
-    "execution": [
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
-    ],
-    "customer": [
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
-    ],
-    "economics": [
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
-    ],
-    "strategy": [
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."},
-      {"question": "...", "context": "..."}
-    ]
-  }
-}
-
-Be aggressive and thorough. This is a challenger exercise — the questions should be uncomfortable and force the PM to defend their strategy against real competitive threats you've identified.`;
-};
-
-const callAnthropicAPI = async (apiKey, horizonData) => {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+const callAnalysisAPI = async (horizonData) => {
+  const response = await fetch("/api/analyze", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 8000,
-      messages: [
-        {
-          role: "user",
-          content: buildAnalysisPrompt(horizonData),
-        },
-      ],
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ horizonData }),
   });
 
   if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`API Error ${response.status}: ${err}`);
+    const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error(err.error || `API Error ${response.status}`);
   }
 
-  const data = await response.json();
-  const text = data.content[0].text;
-
-  // Extract JSON from response (handle markdown code blocks)
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/```\s*([\s\S]*?)```/);
-  const jsonStr = jsonMatch ? jsonMatch[1] : text;
-  return JSON.parse(jsonStr.trim());
+  return response.json();
 };
 
 // ─── MODULE 1: THE HORIZON ──────────────────────────────────────────────────
@@ -481,7 +377,6 @@ const HorizonModule = ({ data, setData, onComplete }) => {
 // ─── MODULE 2: THE GAUNTLET (AI-POWERED) ────────────────────────────────────
 const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
   const [phase, setPhase] = useState("setup"); // setup | analyzing | results | interrogation
-  const [apiKey, setApiKey] = useState("");
   const [analysisResult, setAnalysisResult] = useState(null);
   const [analysisError, setAnalysisError] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -520,16 +415,12 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
   }, [allCompetitors, competitorFilter]);
 
   const runAnalysis = useCallback(async () => {
-    if (!apiKey.trim()) {
-      setAnalysisError("Please enter your Anthropic API key");
-      return;
-    }
     setIsAnalyzing(true);
     setAnalysisError(null);
     setPhase("analyzing");
 
     try {
-      const result = await callAnthropicAPI(apiKey, horizonData);
+      const result = await callAnalysisAPI(horizonData);
       setAnalysisResult(result);
       setPhase("results");
     } catch (err) {
@@ -538,7 +429,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [apiKey, horizonData]);
+  }, [horizonData]);
 
   const addManualCompetitor = () => {
     if (!newCompetitorName.trim()) return;
@@ -639,38 +530,17 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
             </div>
           </div>
 
-          {/* API Key Input */}
-          <div className="space-y-3">
-            <label className="block text-sm font-semibold" style={{ color: BRAND.navy }}>
-              Anthropic API Key
-            </label>
-            <div className="flex gap-3">
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-ant-..."
-                className="flex-1 rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none"
-                style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
-                onFocus={(e) => e.target.style.borderColor = BRAND.red}
-                onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
-              />
-              <button
-                onClick={runAnalysis}
-                disabled={!apiKey.trim()}
-                className="rounded-xl px-6 py-3 text-sm font-bold text-white transition-all disabled:opacity-30 flex items-center gap-2"
-                style={{ backgroundColor: BRAND.red }}
-                onMouseEnter={(e) => { if (apiKey.trim()) e.target.style.backgroundColor = BRAND.redHover; }}
-                onMouseLeave={(e) => { if (apiKey.trim()) e.target.style.backgroundColor = BRAND.red; }}
-              >
-                <Brain size={16} />
-                Run Deep Analysis
-              </button>
-            </div>
-            <p className="text-xs" style={{ color: BRAND.textMuted }}>
-              Your API key is used client-side only and never stored. Get one at console.anthropic.com
-            </p>
-          </div>
+          {/* Run Analysis Button */}
+          <button
+            onClick={runAnalysis}
+            className="w-full rounded-xl px-6 py-4 text-sm font-bold text-white transition-all flex items-center justify-center gap-2"
+            style={{ backgroundColor: BRAND.red }}
+            onMouseEnter={(e) => e.target.style.backgroundColor = BRAND.redHover}
+            onMouseLeave={(e) => e.target.style.backgroundColor = BRAND.red}
+          >
+            <Brain size={18} />
+            Run Deep Competitive Analysis
+          </button>
 
           {analysisError && (
             <div className="rounded-xl border-2 p-4 mt-4" style={{ borderColor: "#fecaca", backgroundColor: "#fef2f2" }}>
@@ -702,7 +572,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
                 Running Deep Competitive Analysis
               </h3>
               <p className="text-sm max-w-md" style={{ color: BRAND.textSecondary }}>
-                Claude is analyzing your strategy, identifying 10-15+ competitors across the landscape,
+                AI is analyzing your strategy, identifying 10-15+ competitors across the landscape,
                 assessing risk levels, and crafting targeted challenger questions...
               </p>
             </div>
