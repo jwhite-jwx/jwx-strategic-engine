@@ -1,705 +1,1026 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
-  Target, Shield, DollarSign, ChevronRight, ChevronLeft, Check,
-  AlertTriangle, Flame, Eye, Sword, Crown, Zap, TrendingUp,
-  ArrowRight, Plus, X, ChevronDown, ChevronUp, BarChart3,
-  Lock, Unlock, Star, Award, Layers, Globe, Users, Briefcase,
-  MessageSquare, HelpCircle, Lightbulb, RefreshCw, Save,
-  FileText, Layout, Activity, Crosshair, BookOpen
+  Eye, Sword, DollarSign, Target, Shield, Zap, Users, TrendingUp,
+  Lock, Check, ChevronRight, ChevronLeft, ArrowRight, AlertTriangle,
+  Crown, Flame, BarChart3, Layers, Brain, Loader2, Star, Plus, X,
+  Search, Globe, Sparkles, RefreshCw
 } from "lucide-react";
 
-// ─── STEEL MAN INTERROGATION ENGINE ─────────────────────────────────────────
-const CHALLENGER_QUESTIONS = {
-  switchingCost: [
-    "Your target customers are already embedded in {competitor}'s ecosystem. What is the ACTUAL dollar cost of switching — including retraining, migration, and lost productivity? Have you quantified this, or are you assuming it's low?",
-    "If {competitor} offers a 40% discount tomorrow to retain the accounts you're targeting, what happens to your pipeline? Be specific.",
-    "Your customer's IT team has spent 18 months integrating {competitor}. Why would they risk their credibility on an unproven alternative?",
-    "What contractual lock-in (annual commitments, data portability barriers, API dependencies) keeps customers with {competitor}? How do you break that?"
-  ],
-  fastFollow: [
-    "{competitor} has 10x your engineering headcount. If your feature ships and gains traction, what stops them from replicating it in 90 days with better distribution?",
-    "Name ONE technical moat you have that {competitor} cannot replicate within two quarters. Not a feature — a structural advantage.",
-    "Microsoft entered the collaboration space and decimated Slack's growth thesis. What makes you think {competitor} won't do the same to you?",
-    "Your 'innovation advantage' has a half-life. What is it? 6 months? 12? What happens when it expires?"
-  ],
-  valueProp: [
-    "You say your value prop is '{value_prop}'. I can find 4 startups on Product Hunt claiming the exact same thing. What's actually different?",
-    "Strip away the marketing language. In one sentence a CFO would understand, why does this make my company more money or save me more money than {competitor}?",
-    "Your 'unique' differentiator — is it unique because no one else thought of it, or because no one else found it valuable enough to build?",
-    "If I gave {competitor}'s PM your PRD right now, what would they say? Would they laugh, panic, or shrug? Be honest."
-  ],
-  marketTiming: [
-    "You claim the market is 'ready' for this. What changed in the last 12 months that makes this viable NOW when it wasn't before?",
-    "Three companies tried this exact approach in 2022 and failed. What do you know that they didn't? Or are you just hoping the market has shifted?",
-    "Is this a 'vitamin' or a 'painkiller'? Because your positioning sounds like a vitamin dressed up as a painkiller.",
-    "What macro trend breaks your thesis? If interest rates stay high, if AI commoditizes your feature, if regulation tightens — which of these kills you?"
-  ],
-  unitEconomics: [
-    "What's your projected CAC? Now triple it — that's the realistic number for enterprise sales. Does your model survive?",
-    "Your LTV assumptions require {X}% annual retention. The industry average is 85%. Why do you deserve to be above average?",
-    "At what customer count do you break even on fully-loaded costs? Not gross margin — fully loaded. Include the sales team, the CS team, the infrastructure.",
-    "If your biggest customer churns in month 6, does your cohort economics still work? Show me the math without the top 10% of accounts."
-  ],
-  defensibility: [
-    "Network effects, switching costs, economies of scale, or brand — which moat are you actually building? Because 'better product' isn't a moat.",
-    "In 5 years, what prevents this from becoming a feature inside a platform play by {competitor}?",
-    "Your data advantage — how much data do you actually need before it compounds? Are you at 1% of that threshold or 50%?",
-    "Open source alternatives exist for nearly everything. What happens when a well-funded OSS project targets your core functionality?"
-  ]
+// ─── BRAND COLORS ───────────────────────────────────────────────────────────
+const BRAND = {
+  navy: "#0f1a3d",
+  red: "#EC0041",
+  redHover: "#860025",
+  redActive: "#530017",
+  lightGray: "#f8f9fb",
+  midGray: "#e5e7ec",
+  textPrimary: "#0f1a3d",
+  textSecondary: "#4a5068",
+  textMuted: "#8890a4",
 };
 
+// ─── INTERROGATION CATEGORIES ───────────────────────────────────────────────
 const INTERROGATION_CATEGORIES = [
-  { id: "switchingCost", label: "Switching Cost Attack", icon: Lock, color: "text-red-400" },
-  { id: "fastFollow", label: "Fast-Follow Threat", icon: Zap, color: "text-amber-400" },
-  { id: "valueProp", label: "Value Prop Dissection", icon: Crosshair, color: "text-orange-400" },
-  { id: "marketTiming", label: "Market Timing Challenge", icon: Activity, color: "text-rose-400" },
-  { id: "unitEconomics", label: "Unit Economics Stress Test", icon: BarChart3, color: "text-yellow-400" },
-  { id: "defensibility", label: "Defensibility Audit", icon: Shield, color: "text-red-500" }
+  { id: "moat", label: "Competitive Moat", icon: Shield, description: "Defensibility & barriers to entry" },
+  { id: "market", label: "Market Reality", icon: TrendingUp, description: "Timing, sizing & dynamics" },
+  { id: "execution", label: "Execution Risk", icon: Zap, description: "Team, tech & operational capacity" },
+  { id: "customer", label: "Customer Truth", icon: Users, description: "Real demand vs. assumed demand" },
+  { id: "economics", label: "Unit Economics", icon: BarChart3, description: "Revenue model sustainability" },
+  { id: "strategy", label: "Strategic Leverage", icon: Target, description: "Asymmetric advantages" },
 ];
 
 // ─── PRICING TEMPLATES ──────────────────────────────────────────────────────
 const PRICING_TEMPLATES = {
-  entry: { name: "Entry", subtitle: "Land & Validate", color: "from-slate-600 to-slate-700", multiplier: 1 },
-  growth: { name: "Growth", subtitle: "Expand & Retain", color: "from-blue-600 to-indigo-700", multiplier: 2.8 },
-  enterprise: { name: "Enterprise", subtitle: "Strategic Lock-in", color: "from-amber-600 to-orange-700", multiplier: 7.5 }
+  entry: {
+    name: "Entry",
+    subtitle: "Land & Prove Value",
+    color: "from-blue-500/20 to-blue-600/10",
+  },
+  growth: {
+    name: "Growth",
+    subtitle: "Expand & Entrench",
+    color: "from-emerald-500/20 to-emerald-600/10",
+  },
+  enterprise: {
+    name: "Enterprise",
+    subtitle: "Lock-in & Maximize",
+    color: "from-purple-500/20 to-purple-600/10",
+  },
 };
 
-// ─── REUSABLE COMPONENTS ────────────────────────────────────────────────────
-const GlowBorder = ({ children, active, challenger, className = "" }) => (
-  <div className={`relative rounded-xl ${className}`}>
-    {active && (
-      <div className={`absolute -inset-[1px] rounded-xl ${
-        challenger
-          ? "bg-gradient-to-r from-red-500/30 via-amber-500/30 to-red-500/30"
-          : "bg-gradient-to-r from-blue-500/30 via-cyan-500/30 to-blue-500/30"
-      } blur-sm`} />
-    )}
-    <div className="relative">{children}</div>
-  </div>
+// ─── JW PLAYER LOGO SVG ────────────────────────────────────────────────────
+const JWLogo = ({ size = 32 }) => (
+  <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
+    <rect width="40" height="40" rx="8" fill={BRAND.red} />
+    <text x="7" y="27" fontFamily="Arial Black, sans-serif" fontWeight="900" fontSize="16" fill="white">JW</text>
+    <polygon points="30,14 30,26 36,20" fill="white" />
+  </svg>
 );
 
-const TextArea = ({ label, value, onChange, placeholder, rows = 3, challenger, hint }) => (
+// ─── REUSABLE COMPONENTS ────────────────────────────────────────────────────
+const TextArea = ({ label, value, onChange, placeholder, rows = 3, hint }) => (
   <div className="space-y-1.5">
-    <label className="block text-sm font-medium text-slate-300">{label}</label>
-    {hint && <p className="text-xs text-slate-500 italic">{hint}</p>}
+    <label className="block text-sm font-semibold" style={{ color: BRAND.navy }}>{label}</label>
     <textarea
-      value={value}
+      value={value || ""}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       rows={rows}
-      className={`w-full rounded-lg border bg-slate-900/60 px-4 py-3 text-sm text-slate-100 placeholder-slate-600 outline-none transition-all focus:ring-2 ${
-        challenger
-          ? "border-amber-700/50 focus:border-amber-500 focus:ring-amber-500/20"
-          : "border-slate-700/50 focus:border-blue-500 focus:ring-blue-500/20"
-      }`}
+      className="w-full rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none focus:ring-0"
+      style={{
+        borderColor: BRAND.midGray,
+        color: BRAND.textPrimary,
+      }}
+      onFocus={(e) => e.target.style.borderColor = BRAND.red}
+      onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
     />
+    {hint && <p className="text-xs" style={{ color: BRAND.textMuted }}>{hint}</p>}
   </div>
 );
 
-const InputField = ({ label, value, onChange, placeholder, challenger, type = "text" }) => (
+const InputField = ({ label, value, onChange, placeholder }) => (
   <div className="space-y-1.5">
-    <label className="block text-sm font-medium text-slate-300">{label}</label>
+    <label className="block text-sm font-semibold" style={{ color: BRAND.navy }}>{label}</label>
     <input
-      type={type}
-      value={value}
+      value={value || ""}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className={`w-full rounded-lg border bg-slate-900/60 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 outline-none transition-all focus:ring-2 ${
-        challenger
-          ? "border-amber-700/50 focus:border-amber-500 focus:ring-amber-500/20"
-          : "border-slate-700/50 focus:border-blue-500 focus:ring-blue-500/20"
-      }`}
+      className="w-full rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none focus:ring-0"
+      style={{
+        borderColor: BRAND.midGray,
+        color: BRAND.textPrimary,
+      }}
+      onFocus={(e) => e.target.style.borderColor = BRAND.red}
+      onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
     />
   </div>
 );
 
-const Badge = ({ children, variant = "default", challenger }) => {
+const Badge = ({ children, variant = "default" }) => {
   const styles = {
-    default: challenger ? "bg-amber-900/40 text-amber-300 border-amber-700/40" : "bg-blue-900/40 text-blue-300 border-blue-700/40",
-    success: "bg-emerald-900/40 text-emerald-300 border-emerald-700/40",
-    warning: "bg-amber-900/40 text-amber-300 border-amber-700/40",
-    danger: "bg-red-900/40 text-red-300 border-red-700/40",
+    default: { backgroundColor: `${BRAND.red}15`, color: BRAND.red, border: `1px solid ${BRAND.red}30` },
+    danger: { backgroundColor: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" },
+    success: { backgroundColor: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" },
+    warning: { backgroundColor: "#fffbeb", color: "#d97706", border: "1px solid #fde68a" },
+    ai: { backgroundColor: "#f5f3ff", color: "#7c3aed", border: "1px solid #ddd6fe" },
   };
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${styles[variant]}`}>
+    <span
+      className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold tracking-wide uppercase"
+      style={styles[variant] || styles.default}
+    >
       {children}
     </span>
   );
 };
 
-// ─── MODULE 1: THE HORIZON ──────────────────────────────────────────────────
-const HorizonModule = ({ data, setData, challenger, onComplete }) => {
-  const [activeSection, setActiveSection] = useState(0);
+const SectionCard = ({ children, className = "" }) => (
+  <div
+    className={`rounded-2xl border-2 bg-white p-6 shadow-sm ${className}`}
+    style={{ borderColor: BRAND.midGray }}
+  >
+    {children}
+  </div>
+);
 
+const RiskBadge = ({ level }) => {
+  const config = {
+    critical: { bg: "#fef2f2", text: "#dc2626", border: "#fecaca", label: "Critical" },
+    high: { bg: "#fff7ed", text: "#ea580c", border: "#fed7aa", label: "High" },
+    medium: { bg: "#fffbeb", text: "#d97706", border: "#fde68a", label: "Medium" },
+    low: { bg: "#f0fdf4", text: "#16a34a", border: "#bbf7d0", label: "Low" },
+    minimal: { bg: "#f8fafc", text: "#64748b", border: "#e2e8f0", label: "Minimal" },
+  };
+  const c = config[level] || config.medium;
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold"
+      style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}
+    >
+      {c.label}
+    </span>
+  );
+};
+
+// ─── AI ANALYSIS ENGINE ─────────────────────────────────────────────────────
+const callAnalysisAPI = async (horizonData) => {
+  const response = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ horizonData }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error(err.error || `API Error ${response.status}`);
+  }
+
+  return response.json();
+};
+
+// ─── MODULE 1: THE HORIZON ──────────────────────────────────────────────────
+const HorizonModule = ({ data, setData, onComplete }) => {
   const sections = [
     {
       id: "mission",
-      title: "Mission Statement",
-      icon: Target,
-      description: "The singular obsession. What does JWX conquer?",
       content: (
-        <div className="space-y-6">
+        <div className="space-y-5">
           <TextArea
-            label="Mission (The North Star)"
+            label="Mission Statement"
             value={data.mission}
             onChange={(v) => setData({ ...data, mission: v })}
-            placeholder="In one paragraph: What must be true for JWX to dominate this space? Think Amazon's 'customer obsession' — not a tagline, a mandate."
-            rows={4}
-            challenger={challenger}
-            hint="Write this as if you're briefing Bezos. No fluff."
+            placeholder="In one sentence: what does this product exist to do? Not 'help customers' — the specific transformation you enable. This should be so clear that a competitor reading it would know exactly where you're aiming."
+            rows={3}
+            hint="Great missions are specific enough to say NO to things. If your mission could belong to any competitor, it's too vague."
           />
           <TextArea
-            label="Anti-Mission (What We Will NOT Do)"
+            label="Anti-Mission (What We Refuse To Do)"
             value={data.antiMission}
             onChange={(v) => setData({ ...data, antiMission: v })}
-            placeholder="Strategy is as much about what you refuse to do. What markets, features, or customer segments are explicitly out of scope?"
+            placeholder="What will you explicitly NOT do, even if customers ask? This is as strategic as your mission. Every company that lost focus said 'yes' one too many times."
             rows={3}
-            challenger={challenger}
-            hint="The best strategies have hard boundaries."
           />
         </div>
-      )
+      ),
     },
     {
       id: "tenets",
-      title: "Operating Tenets",
-      icon: BookOpen,
-      description: "The non-negotiable principles that govern every decision.",
       content: (
         <div className="space-y-4">
-          <p className="text-sm text-slate-400">
-            Tenets are ranked. When two tenets conflict, the higher-ranked tenet wins. This is how Amazon resolves ambiguity at scale.
+          <p className="text-sm" style={{ color: BRAND.textSecondary }}>
+            Strategic tenets are your decision-making shortcuts. When two good options conflict, tenets break the tie.
           </p>
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="flex items-start gap-3">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${
-                challenger ? "bg-amber-900/50 text-amber-300" : "bg-blue-900/50 text-blue-300"
-              }`}>
-                {i + 1}
-              </div>
-              <InputField
-                label=""
-                value={data.tenets?.[i] || ""}
-                onChange={(v) => {
-                  const newTenets = [...(data.tenets || ["", "", "", ""])];
-                  newTenets[i] = v;
-                  setData({ ...data, tenets: newTenets });
-                }}
-                placeholder={[
-                  "e.g., 'Customer outcomes over feature count — always.'",
-                  "e.g., 'Margin-positive from Day 1. No growth-at-all-costs.'",
-                  "e.g., 'Platform-first. Never build a point solution.'",
-                  "e.g., 'Earn trust through transparency, not lock-in.'"
-                ][i]}
-                challenger={challenger}
-              />
-            </div>
+          {(data.tenets || ["", "", "", ""]).map((t, i) => (
+            <InputField
+              key={i}
+              label={`Tenet ${i + 1}`}
+              value={t}
+              onChange={(v) => {
+                const newTenets = [...(data.tenets || ["", "", "", ""])];
+                newTenets[i] = v;
+                setData({ ...data, tenets: newTenets });
+              }}
+              placeholder={[
+                "e.g., 'Developer experience over enterprise features'",
+                "e.g., 'Latency is a feature — sub-100ms or don't ship'",
+                "e.g., 'Open standards over proprietary lock-in'",
+                "e.g., 'Revenue quality over revenue quantity'",
+              ][i]}
+            />
           ))}
         </div>
-      )
+      ),
     },
     {
       id: "drivers",
-      title: "Strategic Drivers",
-      icon: TrendingUp,
-      description: "The market forces, tech shifts, and customer pain that create the opening.",
       content: (
-        <div className="space-y-6">
+        <div className="space-y-5">
           <TextArea
             label="Market Tailwinds"
             value={data.tailwinds}
             onChange={(v) => setData({ ...data, tailwinds: v })}
-            placeholder="What macro forces are working IN your favor? (e.g., regulatory shifts, platform migrations, budget reallocation trends)"
+            placeholder="What macro trends are accelerating demand for your solution? Be specific — 'AI is growing' is not a tailwind. 'Enterprise video consumption is up 340% since 2020 and IT teams lack tools to manage it' is."
             rows={3}
-            challenger={challenger}
           />
           <TextArea
             label="Market Headwinds"
             value={data.headwinds}
             onChange={(v) => setData({ ...data, headwinds: v })}
-            placeholder="What forces are working AGAINST you? Don't sugarcoat this. Investors and execs will find these — better you name them first."
+            placeholder="What forces are working against you? Economic, regulatory, competitive, behavioral. Be brutally honest — The Gauntlet will expose any blind spots here."
             rows={3}
-            challenger={challenger}
           />
           <TextArea
-            label="Customer Pain (Unfiltered)"
+            label="Core Customer Pain"
             value={data.customerPain}
             onChange={(v) => setData({ ...data, customerPain: v })}
-            placeholder="Quote actual customers. 'We struggle with...' not 'Customers want...' — the difference matters."
+            placeholder="What's the #1 pain your customer has TODAY that your product solves? Not 'they need better tools' — the actual felt pain. 'Their video infrastructure costs $200K/yr and breaks during traffic spikes, costing them $50K per incident.'"
             rows={3}
-            challenger={challenger}
           />
         </div>
-      )
+      ),
     },
     {
       id: "okrs",
-      title: "Success OKRs",
-      icon: Award,
-      description: "Measurable outcomes. Not outputs — outcomes.",
       content: (
         <div className="space-y-6">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className={`rounded-lg border p-4 space-y-3 ${
-              challenger ? "border-amber-800/40 bg-amber-950/20" : "border-slate-700/40 bg-slate-800/30"
-            }`}>
-              <div className="flex items-center gap-2">
-                <div className={`h-2 w-2 rounded-full ${
-                  challenger ? "bg-amber-400" : "bg-blue-400"
-                }`} />
-                <span className="text-sm font-semibold text-slate-200">Objective {i + 1}</span>
+          {(data.okrs || [{}, {}, {}]).map((okr, i) => (
+            <div key={i} className="rounded-xl border-2 p-5 space-y-3" style={{ borderColor: BRAND.midGray }}>
+              <div className="flex items-center gap-2 mb-2">
+                <div
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold text-white"
+                  style={{ backgroundColor: BRAND.red }}
+                >
+                  O{i + 1}
+                </div>
+                <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>Objective {i + 1}</span>
               </div>
               <InputField
                 label="Objective"
-                value={data.okrs?.[i]?.objective || ""}
+                value={okr.objective}
                 onChange={(v) => {
                   const newOkrs = [...(data.okrs || [{}, {}, {}])];
                   newOkrs[i] = { ...newOkrs[i], objective: v };
                   setData({ ...data, okrs: newOkrs });
                 }}
-                placeholder="Qualitative goal (e.g., 'Become the default choice for mid-market video infrastructure')"
-                challenger={challenger}
+                placeholder="Qualitative goal — ambitious but achievable"
               />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {[0, 1, 2].map((j) => (
-                  <InputField
-                    key={j}
-                    label={`Key Result ${j + 1}`}
-                    value={data.okrs?.[i]?.keyResults?.[j] || ""}
-                    onChange={(v) => {
-                      const newOkrs = [...(data.okrs || [{}, {}, {}])];
-                      const kr = [...(newOkrs[i]?.keyResults || ["", "", ""])];
-                      kr[j] = v;
-                      newOkrs[i] = { ...newOkrs[i], keyResults: kr };
-                      setData({ ...data, okrs: newOkrs });
-                    }}
-                    placeholder={`Measurable target ${j + 1}`}
-                    challenger={challenger}
-                  />
-                ))}
-              </div>
+              <TextArea
+                label="Key Results"
+                value={okr.keyResults}
+                onChange={(v) => {
+                  const newOkrs = [...(data.okrs || [{}, {}, {}])];
+                  newOkrs[i] = { ...newOkrs[i], keyResults: v };
+                  setData({ ...data, okrs: newOkrs });
+                }}
+                placeholder="3 measurable results (one per line). Must be quantified."
+                rows={3}
+              />
             </div>
           ))}
         </div>
-      )
-    }
+      ),
+    },
   ];
+
+  const sectionLabels = ["Mission & Anti-Mission", "Strategic Tenets", "Market Drivers", "OKRs"];
+  const sectionIcons = [Target, Shield, TrendingUp, Zap];
+  const [activeSection, setActiveSection] = useState(0);
 
   const completeness = useMemo(() => {
     let filled = 0;
-    let total = 8;
-    if (data.mission?.length > 20) filled++;
-    if (data.antiMission?.length > 10) filled++;
-    if (data.tenets?.filter(t => t?.length > 5).length >= 2) filled++;
-    if (data.tailwinds?.length > 10) filled++;
-    if (data.headwinds?.length > 10) filled++;
-    if (data.customerPain?.length > 10) filled++;
-    if (data.okrs?.[0]?.objective?.length > 5) filled++;
-    if (data.okrs?.[0]?.keyResults?.filter(k => k?.length > 3).length >= 2) filled++;
+    let total = 9;
+    if (data.mission) filled++;
+    if (data.antiMission) filled++;
+    (data.tenets || []).forEach((t) => { if (t) filled++; });
+    if (data.tailwinds) filled++;
+    if (data.headwinds) filled++;
+    if (data.customerPain) filled++;
+    // Not counting OKRs as required
     return Math.round((filled / total) * 100);
   }, [data]);
 
   return (
     <div className="space-y-6">
-      {/* Progress Bar */}
-      <div className="space-y-2">
-        <div className="flex justify-between text-sm">
-          <span className="text-slate-400">Horizon Completeness</span>
-          <span className={challenger ? "text-amber-400" : "text-blue-400"}>{completeness}%</span>
-        </div>
-        <div className="h-1.5 rounded-full bg-slate-800">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              challenger
-                ? "bg-gradient-to-r from-amber-500 to-red-500"
-                : "bg-gradient-to-r from-blue-500 to-cyan-400"
-            }`}
-            style={{ width: `${completeness}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Section Navigation */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {sections.map((s, i) => {
-          const Icon = s.icon;
+      {/* Section Tabs */}
+      <div className="flex flex-wrap gap-2">
+        {sectionLabels.map((label, i) => {
+          const Icon = sectionIcons[i];
           return (
             <button
-              key={s.id}
+              key={i}
               onClick={() => setActiveSection(i)}
-              className={`flex items-center gap-2 whitespace-nowrap rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
-                activeSection === i
-                  ? challenger
-                    ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
-                    : "border-blue-500/50 bg-blue-500/10 text-blue-300"
-                  : "border-slate-700/40 bg-slate-800/40 text-slate-400 hover:text-slate-300 hover:border-slate-600"
-              }`}
+              className="flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-semibold transition-all"
+              style={{
+                borderColor: activeSection === i ? BRAND.red : BRAND.midGray,
+                backgroundColor: activeSection === i ? `${BRAND.red}08` : "white",
+                color: activeSection === i ? BRAND.red : BRAND.textSecondary,
+              }}
             >
               <Icon size={16} />
-              {s.title}
+              {label}
             </button>
           );
         })}
       </div>
 
       {/* Active Section */}
-      <GlowBorder active={true} challenger={challenger}>
-        <div className={`rounded-xl border p-6 ${
-          challenger ? "border-amber-800/30 bg-slate-900/80" : "border-slate-700/30 bg-slate-900/80"
-        }`}>
-          <div className="mb-4">
-            <h3 className="text-lg font-semibold text-white">{sections[activeSection].title}</h3>
-            <p className="text-sm text-slate-400 mt-1">{sections[activeSection].description}</p>
-          </div>
-          {sections[activeSection].content}
+      <SectionCard>
+        <div className="mb-5">
+          <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>
+            {sectionLabels[activeSection]}
+          </h3>
         </div>
-      </GlowBorder>
+        {sections[activeSection].content}
+      </SectionCard>
 
-      {/* Complete Button */}
-      {completeness >= 75 && (
+      {/* Completeness & Lock */}
+      <div className="flex items-center justify-between rounded-2xl border-2 bg-white p-5" style={{ borderColor: BRAND.midGray }}>
+        <div className="flex items-center gap-4">
+          <div className="relative h-12 w-12">
+            <svg className="h-12 w-12 -rotate-90">
+              <circle cx="24" cy="24" r="20" fill="none" stroke={BRAND.midGray} strokeWidth="3" />
+              <circle
+                cx="24" cy="24" r="20" fill="none"
+                stroke={completeness >= 80 ? "#16a34a" : BRAND.red}
+                strokeWidth="3"
+                strokeDasharray={`${completeness * 1.257} 999`}
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center text-xs font-bold" style={{ color: BRAND.navy }}>
+              {completeness}%
+            </span>
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: BRAND.navy }}>Horizon Completeness</p>
+            <p className="text-xs" style={{ color: BRAND.textMuted }}>
+              {completeness >= 80 ? "Ready to face The Gauntlet" : "Fill in more fields to unlock The Gauntlet"}
+            </p>
+          </div>
+        </div>
         <button
           onClick={onComplete}
-          className={`w-full rounded-lg py-3 px-4 text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
-            challenger
-              ? "bg-amber-600 hover:bg-amber-500 text-white"
-              : "bg-blue-600 hover:bg-blue-500 text-white"
-          }`}
+          disabled={completeness < 60}
+          className="rounded-xl px-6 py-3 text-sm font-bold text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
+          style={{ backgroundColor: completeness >= 60 ? BRAND.red : BRAND.midGray }}
+          onMouseEnter={(e) => { if (completeness >= 60) e.target.style.backgroundColor = BRAND.redHover; }}
+          onMouseLeave={(e) => { if (completeness >= 60) e.target.style.backgroundColor = BRAND.red; }}
         >
+          <Lock size={16} />
           Lock Horizon & Enter The Gauntlet
-          <ArrowRight size={16} />
         </button>
-      )}
+      </div>
     </div>
   );
 };
 
-// ─── MODULE 2: THE GAUNTLET ─────────────────────────────────────────────────
-const GauntletModule = ({ data, setData, horizonData, challenger, onComplete }) => {
-  const [phase, setPhase] = useState("wizard"); // wizard | interrogation
-  const [wizardStep, setWizardStep] = useState(0);
+// ─── MODULE 2: THE GAUNTLET (AI-POWERED) ────────────────────────────────────
+const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
+  const [phase, setPhase] = useState("setup"); // setup | analyzing | results | interrogation
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [analysisError, setAnalysisError] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [manualCompetitors, setManualCompetitors] = useState([]);
+  const [newCompetitorName, setNewCompetitorName] = useState("");
+  const [pmRatings, setPmRatings] = useState({});
   const [activeCategory, setActiveCategory] = useState(0);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [responses, setResponses] = useState({});
-  const [scores, setScores] = useState({});
+  const [responses, setResponses] = useState(data.interrogationResponses || {});
+  const [scores, setScores] = useState(data.interrogationScores || {});
+  const [competitorFilter, setCompetitorFilter] = useState("all");
 
-  // Wizard Steps
-  const addCompetitor = (type) => {
-    const list = type === "direct" ? "directCompetitors" : "indirectCompetitors";
-    setData({
-      ...data,
-      [list]: [...(data[list] || []), { name: "", threat: "", strength: "", weakness: "", valueProp: "" }]
-    });
-  };
-
-  const updateCompetitor = (type, index, field, value) => {
-    const list = type === "direct" ? "directCompetitors" : "indirectCompetitors";
-    const updated = [...(data[list] || [])];
-    updated[index] = { ...updated[index], [field]: value };
-    setData({ ...data, [list]: updated });
-  };
-
-  const removeCompetitor = (type, index) => {
-    const list = type === "direct" ? "directCompetitors" : "indirectCompetitors";
-    const updated = [...(data[list] || [])];
-    updated.splice(index, 1);
-    setData({ ...data, [list]: updated });
-  };
-
-  const primaryCompetitor = data.directCompetitors?.[0]?.name || "the competitor";
-  const userValueProp = data.directCompetitors?.[0]?.valueProp || horizonData.mission || "your product";
-
-  const getQuestion = (categoryId, qIndex) => {
-    const questions = CHALLENGER_QUESTIONS[categoryId] || [];
-    const q = questions[qIndex % questions.length] || "";
-    return q.replace(/\{competitor\}/g, primaryCompetitor)
-      .replace(/\{value_prop\}/g, userValueProp)
-      .replace(/\{X\}/g, "95");
-  };
-
-  const handleResponse = (categoryId, response) => {
-    const key = `${categoryId}_${currentQuestionIndex}`;
-    setResponses({ ...responses, [key]: response });
-  };
-
-  const scoreResponse = (categoryId, score) => {
-    const key = `${categoryId}_${currentQuestionIndex}`;
-    setScores({ ...scores, [key]: score });
-  };
-
-  const wizardSteps = [
-    {
-      title: "Direct Competitors",
-      subtitle: "Who are you going HEAD-TO-HEAD against?",
-      icon: Sword,
-      content: (
-        <div className="space-y-4">
-          <p className="text-sm text-slate-400">
-            Direct competitors serve the same customer with the same core value proposition. Be ruthlessly honest — if a prospect would evaluate them alongside you, they belong here.
-          </p>
-          {(data.directCompetitors || []).map((comp, i) => (
-            <div key={i} className={`rounded-lg border p-4 space-y-3 ${
-              challenger ? "border-amber-800/30 bg-amber-950/10" : "border-slate-700/30 bg-slate-800/20"
-            }`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-300">Competitor {i + 1}</span>
-                <button onClick={() => removeCompetitor("direct", i)} className="text-slate-500 hover:text-red-400">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <InputField label="Name" value={comp.name} onChange={(v) => updateCompetitor("direct", i, "name", v)} placeholder="e.g., Mux, Cloudflare Stream" challenger={challenger} />
-                <InputField label="Threat Level" value={comp.threat} onChange={(v) => updateCompetitor("direct", i, "threat", v)} placeholder="Critical / High / Medium" challenger={challenger} />
-              </div>
-              <InputField label="Their Core Strength (be generous)" value={comp.strength} onChange={(v) => updateCompetitor("direct", i, "strength", v)} placeholder="What do they do BETTER than you? No cope." challenger={challenger} />
-              <InputField label="Their Weakness (be specific)" value={comp.weakness} onChange={(v) => updateCompetitor("direct", i, "weakness", v)} placeholder="Not 'bad UI' — what structural weakness can you exploit?" challenger={challenger} />
-              <InputField label="Your Counter-Value Prop" value={comp.valueProp} onChange={(v) => updateCompetitor("direct", i, "valueProp", v)} placeholder="Why does the customer choose YOU over them?" challenger={challenger} />
-            </div>
-          ))}
-          <button
-            onClick={() => addCompetitor("direct")}
-            className={`flex items-center gap-2 rounded-lg border border-dashed px-4 py-3 text-sm w-full justify-center transition-colors ${
-              challenger
-                ? "border-amber-700/40 text-amber-400 hover:border-amber-600 hover:bg-amber-950/20"
-                : "border-slate-600/40 text-slate-400 hover:border-blue-500 hover:bg-blue-950/20"
-            }`}
-          >
-            <Plus size={16} /> Add Direct Competitor
-          </button>
-        </div>
-      )
-    },
-    {
-      title: "Indirect Competitors",
-      subtitle: "Who solves the same PROBLEM differently?",
-      icon: Globe,
-      content: (
-        <div className="space-y-4">
-          <p className="text-sm text-slate-400">
-            Indirect competitors are the sneaky ones. They solve the customer's underlying problem but with a completely different approach. Spreadsheets, manual processes, and "do nothing" are valid entries.
-          </p>
-          {(data.indirectCompetitors || []).map((comp, i) => (
-            <div key={i} className={`rounded-lg border p-4 space-y-3 ${
-              challenger ? "border-amber-800/30 bg-amber-950/10" : "border-slate-700/30 bg-slate-800/20"
-            }`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-300">Alternative {i + 1}</span>
-                <button onClick={() => removeCompetitor("indirect", i)} className="text-slate-500 hover:text-red-400">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <InputField label="Name / Category" value={comp.name} onChange={(v) => updateCompetitor("indirect", i, "name", v)} placeholder="e.g., In-house FFmpeg pipeline, YouTube unlisted" challenger={challenger} />
-                <InputField label="Why Customers Use It" value={comp.strength} onChange={(v) => updateCompetitor("indirect", i, "strength", v)} placeholder="What makes this 'good enough'?" challenger={challenger} />
-              </div>
-              <InputField label="Your Displacement Strategy" value={comp.valueProp} onChange={(v) => updateCompetitor("indirect", i, "valueProp", v)} placeholder="How do you convince them that 'good enough' isn't good enough?" challenger={challenger} />
-            </div>
-          ))}
-          <button
-            onClick={() => addCompetitor("indirect")}
-            className={`flex items-center gap-2 rounded-lg border border-dashed px-4 py-3 text-sm w-full justify-center transition-colors ${
-              challenger
-                ? "border-amber-700/40 text-amber-400 hover:border-amber-600 hover:bg-amber-950/20"
-                : "border-slate-600/40 text-slate-400 hover:border-blue-500 hover:bg-blue-950/20"
-            }`}
-          >
-            <Plus size={16} /> Add Indirect Competitor
-          </button>
-        </div>
-      )
-    },
-    {
-      title: "Battleground Definition",
-      subtitle: "Where will you fight — and where will you retreat?",
-      icon: Layout,
-      content: (
-        <div className="space-y-6">
-          <TextArea
-            label="Your Beachhead Segment"
-            value={data.beachhead}
-            onChange={(v) => setData({ ...data, beachhead: v })}
-            placeholder="The specific, narrow segment you will DOMINATE first. Not 'enterprise' — give me the ICP with detail. Industry, size, tech stack, buying trigger."
-            rows={3}
-            challenger={challenger}
-          />
-          <TextArea
-            label="Competitive Positioning Statement"
-            value={data.positioning}
-            onChange={(v) => setData({ ...data, positioning: v })}
-            placeholder="For [target customer] who [need], [product] is a [category] that [key benefit]. Unlike [primary competitor], we [primary differentiator]."
-            rows={3}
-            challenger={challenger}
-            hint="Geoffrey Moore's positioning template. Fill it in completely."
-          />
-          <TextArea
-            label="What You're Willing to LOSE"
-            value={data.tradeoffs}
-            onChange={(v) => setData({ ...data, tradeoffs: v })}
-            placeholder="Strategy requires trade-offs. What features, segments, or capabilities will you explicitly sacrifice to win your beachhead?"
-            rows={3}
-            challenger={challenger}
-          />
-        </div>
-      )
+  // Challenger questions from AI or fallback
+  const challengerQuestions = useMemo(() => {
+    if (analysisResult?.challengerQuestions) {
+      return analysisResult.challengerQuestions;
     }
-  ];
+    return null;
+  }, [analysisResult]);
 
-  const canEnterInterrogation = (data.directCompetitors?.length > 0) && data.positioning?.length > 10;
+  const allCompetitors = useMemo(() => {
+    const aiCompetitors = (analysisResult?.competitors || []).map((c) => ({
+      ...c,
+      source: "ai",
+    }));
+    const manual = manualCompetitors.map((c) => ({
+      ...c,
+      source: "manual",
+    }));
+    return [...aiCompetitors, ...manual];
+  }, [analysisResult, manualCompetitors]);
 
+  const filteredCompetitors = useMemo(() => {
+    if (competitorFilter === "all") return allCompetitors;
+    return allCompetitors.filter((c) => c.category === competitorFilter);
+  }, [allCompetitors, competitorFilter]);
+
+  const runAnalysis = useCallback(async () => {
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+    setPhase("analyzing");
+
+    try {
+      const result = await callAnalysisAPI(horizonData);
+      setAnalysisResult(result);
+      setPhase("results");
+    } catch (err) {
+      setAnalysisError(err.message);
+      setPhase("setup");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [horizonData]);
+
+  const addManualCompetitor = () => {
+    if (!newCompetitorName.trim()) return;
+    setManualCompetitors([
+      ...manualCompetitors,
+      {
+        name: newCompetitorName,
+        category: "direct",
+        description: "",
+        strengths: [],
+        weaknesses: [],
+        threat: "",
+        aiRiskRating: "medium",
+        riskRationale: "PM-added competitor — rate manually",
+      },
+    ]);
+    setNewCompetitorName("");
+  };
+
+  const categoryColors = {
+    direct: { bg: "#fef2f2", text: "#dc2626", border: "#fecaca" },
+    indirect: { bg: "#fffbeb", text: "#d97706", border: "#fde68a" },
+    emerging: { bg: "#f5f3ff", text: "#7c3aed", border: "#ddd6fe" },
+    adjacent: { bg: "#f0fdf4", text: "#16a34a", border: "#bbf7d0" },
+  };
+
+  // ── SETUP PHASE ──
+  if (phase === "setup") {
+    return (
+      <div className="space-y-6">
+        <SectionCard>
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl" style={{ backgroundColor: `${BRAND.red}10` }}>
+              <Brain size={24} style={{ color: BRAND.red }} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>
+                AI Competitive Intelligence Engine
+              </h3>
+              <p className="text-sm" style={{ color: BRAND.textSecondary }}>
+                Claude will analyze your Horizon data and deliver a deep competitive landscape analysis
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border-2 p-5 space-y-4 mb-5" style={{ borderColor: BRAND.midGray }}>
+            <h4 className="text-sm font-bold flex items-center gap-2" style={{ color: BRAND.navy }}>
+              <Sparkles size={16} style={{ color: BRAND.red }} />
+              What the AI will analyze:
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                "10-15+ competitors (direct, indirect, emerging)",
+                "Risk ratings with rationale for each",
+                "Market dynamics & consolidation trends",
+                "Switching costs & regulatory factors",
+                "Strategic recommendations",
+                "24 tailored challenger questions",
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-2 text-sm" style={{ color: BRAND.textSecondary }}>
+                  <Check size={14} className="mt-0.5 shrink-0" style={{ color: "#16a34a" }} />
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Horizon Data Preview */}
+          <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: BRAND.lightGray }}>
+            <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: BRAND.textMuted }}>
+              Data from The Horizon
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Mission</p>
+                <p className="text-sm mt-0.5" style={{ color: BRAND.textPrimary }}>
+                  {horizonData.mission || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Customer Pain</p>
+                <p className="text-sm mt-0.5" style={{ color: BRAND.textPrimary }}>
+                  {horizonData.customerPain || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Tailwinds</p>
+                <p className="text-sm mt-0.5" style={{ color: BRAND.textPrimary }}>
+                  {horizonData.tailwinds || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Headwinds</p>
+                <p className="text-sm mt-0.5" style={{ color: BRAND.textPrimary }}>
+                  {horizonData.headwinds || "—"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Run Analysis Button */}
+          <button
+            onClick={runAnalysis}
+            className="w-full rounded-xl px-6 py-4 text-sm font-bold text-white transition-all flex items-center justify-center gap-2"
+            style={{ backgroundColor: BRAND.red }}
+            onMouseEnter={(e) => e.target.style.backgroundColor = BRAND.redHover}
+            onMouseLeave={(e) => e.target.style.backgroundColor = BRAND.red}
+          >
+            <Brain size={18} />
+            Run Deep Competitive Analysis
+          </button>
+
+          {analysisError && (
+            <div className="rounded-xl border-2 p-4 mt-4" style={{ borderColor: "#fecaca", backgroundColor: "#fef2f2" }}>
+              <p className="text-sm font-semibold text-red-600 flex items-center gap-2">
+                <AlertTriangle size={16} /> Analysis Error
+              </p>
+              <p className="text-xs text-red-500 mt-1">{analysisError}</p>
+            </div>
+          )}
+        </SectionCard>
+      </div>
+    );
+  }
+
+  // ── ANALYZING PHASE ──
+  if (phase === "analyzing") {
+    return (
+      <div className="space-y-6">
+        <SectionCard>
+          <div className="flex flex-col items-center justify-center py-16 space-y-6">
+            <div className="relative">
+              <div className="h-20 w-20 rounded-2xl flex items-center justify-center" style={{ backgroundColor: `${BRAND.red}10` }}>
+                <Brain size={36} style={{ color: BRAND.red }} className="animate-pulse" />
+              </div>
+              <Loader2 size={56} className="absolute -top-4 -left-4 animate-spin" style={{ color: `${BRAND.red}40` }} />
+            </div>
+            <div className="text-center">
+              <h3 className="text-xl font-bold mb-2" style={{ color: BRAND.navy }}>
+                Running Deep Competitive Analysis
+              </h3>
+              <p className="text-sm max-w-md" style={{ color: BRAND.textSecondary }}>
+                Claude is analyzing your strategy, identifying 10-15+ competitors across the landscape,
+                assessing risk levels, and crafting targeted challenger questions...
+              </p>
+            </div>
+            <div className="flex gap-2 mt-4">
+              {["Scanning market", "Identifying competitors", "Assessing threats", "Building questions"].map((step, i) => (
+                <span
+                  key={i}
+                  className="rounded-full px-3 py-1 text-xs font-medium animate-pulse"
+                  style={{
+                    backgroundColor: `${BRAND.red}10`,
+                    color: BRAND.red,
+                    animationDelay: `${i * 0.5}s`,
+                  }}
+                >
+                  {step}
+                </span>
+              ))}
+            </div>
+          </div>
+        </SectionCard>
+      </div>
+    );
+  }
+
+  // ── RESULTS PHASE (Competitive Landscape) ──
+  if (phase === "results") {
+    return (
+      <div className="space-y-6">
+        {/* Landscape Summary */}
+        <SectionCard>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: `${BRAND.red}10` }}>
+                <Globe size={20} style={{ color: BRAND.red }} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>Competitive Landscape</h3>
+                <p className="text-xs" style={{ color: BRAND.textMuted }}>
+                  {allCompetitors.length} competitors identified
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="ai">AI-Powered</Badge>
+              <button
+                onClick={() => setPhase("setup")}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border-2 transition-all"
+                style={{ borderColor: BRAND.midGray, color: BRAND.textSecondary }}
+              >
+                <RefreshCw size={12} /> Re-analyze
+              </button>
+            </div>
+          </div>
+          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: BRAND.textSecondary }}>
+            {analysisResult?.landscapeSummary}
+          </p>
+        </SectionCard>
+
+        {/* Filter Tabs */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { key: "all", label: `All (${allCompetitors.length})` },
+            { key: "direct", label: `Direct (${allCompetitors.filter((c) => c.category === "direct").length})` },
+            { key: "indirect", label: `Indirect (${allCompetitors.filter((c) => c.category === "indirect").length})` },
+            { key: "emerging", label: `Emerging (${allCompetitors.filter((c) => c.category === "emerging").length})` },
+            { key: "adjacent", label: `Adjacent (${allCompetitors.filter((c) => c.category === "adjacent").length})` },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setCompetitorFilter(tab.key)}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold border-2 transition-all"
+              style={{
+                borderColor: competitorFilter === tab.key ? BRAND.red : BRAND.midGray,
+                backgroundColor: competitorFilter === tab.key ? `${BRAND.red}08` : "white",
+                color: competitorFilter === tab.key ? BRAND.red : BRAND.textSecondary,
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Competitor Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filteredCompetitors.map((comp, i) => {
+            const catColor = categoryColors[comp.category] || categoryColors.direct;
+            return (
+              <div
+                key={`${comp.name}-${i}`}
+                className="rounded-2xl border-2 bg-white p-5 space-y-3 transition-all hover:shadow-md"
+                style={{ borderColor: BRAND.midGray }}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="text-sm font-bold" style={{ color: BRAND.navy }}>{comp.name}</h4>
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
+                        style={{ backgroundColor: catColor.bg, color: catColor.text, border: `1px solid ${catColor.border}` }}
+                      >
+                        {comp.category}
+                      </span>
+                      {comp.source === "manual" && (
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-bold bg-gray-100 text-gray-500">PM Added</span>
+                      )}
+                    </div>
+                    <p className="text-xs" style={{ color: BRAND.textSecondary }}>{comp.description}</p>
+                  </div>
+                </div>
+
+                {/* Risk Ratings */}
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <Brain size={12} style={{ color: "#7c3aed" }} />
+                    <span className="text-[10px] font-semibold" style={{ color: BRAND.textMuted }}>AI Risk:</span>
+                    <RiskBadge level={comp.aiRiskRating} />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Users size={12} style={{ color: BRAND.red }} />
+                    <span className="text-[10px] font-semibold" style={{ color: BRAND.textMuted }}>PM Risk:</span>
+                    <select
+                      value={pmRatings[comp.name] || ""}
+                      onChange={(e) => setPmRatings({ ...pmRatings, [comp.name]: e.target.value })}
+                      className="rounded-md border text-xs px-2 py-0.5 font-semibold"
+                      style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
+                    >
+                      <option value="">Rate...</option>
+                      <option value="critical">Critical</option>
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                      <option value="minimal">Minimal</option>
+                    </select>
+                    {pmRatings[comp.name] && <RiskBadge level={pmRatings[comp.name]} />}
+                  </div>
+                </div>
+
+                {/* Risk Rationale */}
+                <p className="text-xs italic" style={{ color: BRAND.textMuted }}>
+                  {comp.riskRationale}
+                </p>
+
+                {/* Strengths & Weaknesses */}
+                {(comp.strengths?.length > 0 || comp.weaknesses?.length > 0) && (
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#dc2626" }}>Strengths</p>
+                      {(comp.strengths || []).map((s, j) => (
+                        <p key={j} className="text-xs flex items-start gap-1" style={{ color: BRAND.textSecondary }}>
+                          <span className="text-red-400 mt-0.5">•</span> {s}
+                        </p>
+                      ))}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#16a34a" }}>Weaknesses</p>
+                      {(comp.weaknesses || []).map((w, j) => (
+                        <p key={j} className="text-xs flex items-start gap-1" style={{ color: BRAND.textSecondary }}>
+                          <span className="text-green-400 mt-0.5">•</span> {w}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Add Manual Competitor */}
+        <SectionCard>
+          <h4 className="text-sm font-bold flex items-center gap-2 mb-3" style={{ color: BRAND.navy }}>
+            <Plus size={16} style={{ color: BRAND.red }} />
+            Add Your Own Competitor
+          </h4>
+          <div className="flex gap-3">
+            <input
+              value={newCompetitorName}
+              onChange={(e) => setNewCompetitorName(e.target.value)}
+              placeholder="Competitor name..."
+              className="flex-1 rounded-xl border-2 bg-white px-4 py-2.5 text-sm placeholder:text-gray-400 focus:outline-none"
+              style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
+              onKeyDown={(e) => e.key === "Enter" && addManualCompetitor()}
+              onFocus={(e) => e.target.style.borderColor = BRAND.red}
+              onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
+            />
+            <button
+              onClick={addManualCompetitor}
+              className="rounded-xl px-4 py-2.5 text-sm font-bold text-white flex items-center gap-2"
+              style={{ backgroundColor: BRAND.red }}
+            >
+              <Plus size={14} /> Add
+            </button>
+          </div>
+        </SectionCard>
+
+        {/* Market Dynamics */}
+        {analysisResult?.marketDynamics && (
+          <SectionCard>
+            <h4 className="text-sm font-bold flex items-center gap-2 mb-4" style={{ color: BRAND.navy }}>
+              <TrendingUp size={16} style={{ color: BRAND.red }} />
+              Market Dynamics
+            </h4>
+            <div className="grid grid-cols-2 gap-4">
+              {Object.entries(analysisResult.marketDynamics).map(([key, value]) => (
+                <div key={key} className="rounded-xl p-4" style={{ backgroundColor: BRAND.lightGray }}>
+                  <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: BRAND.textMuted }}>
+                    {key.replace(/([A-Z])/g, " $1").trim()}
+                  </p>
+                  <p className="text-sm" style={{ color: BRAND.textSecondary }}>{value}</p>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        )}
+
+        {/* Strategic Recommendations */}
+        {analysisResult?.strategicRecommendations?.length > 0 && (
+          <SectionCard>
+            <h4 className="text-sm font-bold flex items-center gap-2 mb-4" style={{ color: BRAND.navy }}>
+              <Sparkles size={16} style={{ color: BRAND.red }} />
+              Strategic Recommendations
+            </h4>
+            <div className="space-y-2">
+              {analysisResult.strategicRecommendations.map((rec, i) => (
+                <div key={i} className="flex items-start gap-3 rounded-xl p-3" style={{ backgroundColor: BRAND.lightGray }}>
+                  <div
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
+                    style={{ backgroundColor: BRAND.red }}
+                  >
+                    {i + 1}
+                  </div>
+                  <p className="text-sm" style={{ color: BRAND.textSecondary }}>{rec}</p>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        )}
+
+        {/* Enter Interrogation */}
+        <button
+          onClick={() => {
+            setData({
+              ...data,
+              competitors: allCompetitors,
+              pmRatings,
+              analysisResult,
+            });
+            setPhase("interrogation");
+          }}
+          className="w-full rounded-2xl border-2 py-5 px-6 text-sm font-bold transition-all flex items-center justify-center gap-3 group"
+          style={{
+            borderColor: BRAND.red,
+            backgroundColor: `${BRAND.red}05`,
+            color: BRAND.red,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = BRAND.red;
+            e.currentTarget.style.color = "white";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = `${BRAND.red}05`;
+            e.currentTarget.style.color = BRAND.red;
+          }}
+        >
+          <Flame size={20} className="group-hover:animate-pulse" />
+          Enter Steel Man Interrogation — {challengerQuestions ? "24 AI-Tailored Questions" : "24 Questions"}
+          <ArrowRight size={16} />
+        </button>
+      </div>
+    );
+  }
+
+  // ── INTERROGATION PHASE ──
   if (phase === "interrogation") {
     const cat = INTERROGATION_CATEGORIES[activeCategory];
-    const question = getQuestion(cat.id, currentQuestionIndex);
+    const CatIcon = cat.icon;
+    const questions = challengerQuestions?.[cat.id] || [];
+    const currentQ = questions[currentQuestionIndex];
     const responseKey = `${cat.id}_${currentQuestionIndex}`;
-    const totalAnswered = Object.keys(responses).length;
-    const totalQuestions = INTERROGATION_CATEGORIES.length * 2; // 2 questions per category minimum
+
+    const totalAnswered = Object.keys(responses).filter((k) => responses[k]).length;
+    const totalQuestions = INTERROGATION_CATEGORIES.length * 4;
+    const catAnswered = Object.keys(responses).filter((k) => k.startsWith(cat.id) && responses[k]).length;
 
     return (
       <div className="space-y-6">
         {/* Interrogation Header */}
-        <div className="rounded-xl border border-red-800/40 bg-gradient-to-r from-red-950/40 via-slate-900 to-amber-950/40 p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-900/50">
-              <Flame size={20} className="text-red-400" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: `${BRAND.red}10` }}>
+              <Flame size={20} style={{ color: BRAND.red }} />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-red-300">STEEL MAN INTERROGATION</h3>
-              <p className="text-xs text-red-400/70">Mode: Hostile Competitor | Challenger Method Active</p>
+              <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>Steel Man Interrogation</h3>
+              <p className="text-xs" style={{ color: BRAND.textMuted }}>
+                {totalAnswered}/{totalQuestions} challenges answered
+              </p>
             </div>
           </div>
-          <p className="text-sm text-slate-400">
-            I am now your smartest competitor's strategist. I will defend their position with maximum conviction.
-            Your job is to convince me — with evidence, not hope — that your product deserves to exist.
-          </p>
-          <div className="mt-3 h-1.5 rounded-full bg-slate-800">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-red-500 to-amber-500 transition-all duration-500"
-              style={{ width: `${Math.min(100, (totalAnswered / totalQuestions) * 100)}%` }}
-            />
-          </div>
-          <div className="flex justify-between mt-1.5 text-xs text-slate-500">
-            <span>{totalAnswered} challenges answered</span>
-            <span>{totalQuestions} minimum required</span>
-          </div>
+          <Badge variant="danger">HOSTILE</Badge>
         </div>
 
-        {/* Category Navigation */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+        {/* Progress Bar */}
+        <div className="h-2 rounded-full" style={{ backgroundColor: BRAND.midGray }}>
+          <div
+            className="h-2 rounded-full transition-all duration-500"
+            style={{ width: `${(totalAnswered / totalQuestions) * 100}%`, backgroundColor: BRAND.red }}
+          />
+        </div>
+
+        {/* Category Tabs */}
+        <div className="flex flex-wrap gap-2">
           {INTERROGATION_CATEGORIES.map((c, i) => {
             const Icon = c.icon;
-            const answered = Object.keys(responses).filter(k => k.startsWith(c.id)).length;
+            const answered = Object.keys(responses).filter((k) => k.startsWith(c.id) && responses[k]).length;
             return (
               <button
                 key={c.id}
                 onClick={() => { setActiveCategory(i); setCurrentQuestionIndex(0); }}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all ${
-                  activeCategory === i
-                    ? "border-red-500/50 bg-red-500/10 text-red-300"
-                    : "border-slate-700/40 bg-slate-800/40 text-slate-400 hover:text-slate-300"
-                }`}
+                className="flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-xs font-semibold transition-all"
+                style={{
+                  borderColor: activeCategory === i ? BRAND.red : BRAND.midGray,
+                  backgroundColor: activeCategory === i ? `${BRAND.red}08` : "white",
+                  color: activeCategory === i ? BRAND.red : BRAND.textSecondary,
+                }}
               >
-                <Icon size={14} className={activeCategory === i ? c.color : ""} />
-                <span className="truncate">{c.label}</span>
-                {answered > 0 && (
-                  <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-900/50 text-[10px] text-red-300">
-                    {answered}
-                  </span>
-                )}
+                <Icon size={14} />
+                {c.label}
+                <span className="rounded-full px-1.5 py-0.5 text-[10px]" style={{
+                  backgroundColor: answered === 4 ? "#dcfce7" : `${BRAND.red}10`,
+                  color: answered === 4 ? "#16a34a" : BRAND.red,
+                }}>
+                  {answered}/4
+                </span>
               </button>
             );
           })}
         </div>
 
-        {/* Question Card */}
-        <div className="rounded-xl border border-red-800/30 bg-slate-900/80 p-6 space-y-5">
-          <div className="flex items-start gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-900/40">
-              <Sword size={16} className="text-red-400" />
-            </div>
-            <div>
-              <p className="text-xs text-red-400 font-semibold uppercase tracking-wider mb-2">
-                {cat.label} — Challenge {currentQuestionIndex + 1}
-              </p>
-              <p className="text-sm text-slate-200 leading-relaxed">{question}</p>
-            </div>
+        {/* Current Question */}
+        <SectionCard>
+          <div className="flex items-center gap-2 mb-4">
+            <CatIcon size={18} style={{ color: BRAND.red }} />
+            <h4 className="text-sm font-bold" style={{ color: BRAND.navy }}>
+              {cat.label} — Question {currentQuestionIndex + 1}/4
+            </h4>
           </div>
 
-          <TextArea
-            label="Your Defense"
+          {currentQ && (
+            <>
+              <p className="text-base font-semibold mb-2" style={{ color: BRAND.navy }}>
+                {currentQ.question}
+              </p>
+              {currentQ.context && (
+                <div className="rounded-xl p-3 mb-4" style={{ backgroundColor: `${BRAND.red}05`, border: `1px solid ${BRAND.red}20` }}>
+                  <p className="text-xs flex items-start gap-2" style={{ color: BRAND.red }}>
+                    <Brain size={12} className="mt-0.5 shrink-0" />
+                    <span className="italic">{currentQ.context}</span>
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
+          <textarea
             value={responses[responseKey] || ""}
-            onChange={(v) => handleResponse(cat.id, v)}
-            placeholder="Defend your position. Use data, customer quotes, and structural arguments — not assertions. If you can't defend it, that's a signal."
-            rows={5}
-            challenger={true}
+            onChange={(e) => setResponses({ ...responses, [responseKey]: e.target.value })}
+            placeholder="Defend your position. Be specific — hand-waving will be exposed..."
+            rows={4}
+            className="w-full rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none mb-4"
+            style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
+            onFocus={(e) => e.target.style.borderColor = BRAND.red}
+            onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
           />
 
           {/* Self-Score */}
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-slate-400">Confidence in your answer:</span>
-            <div className="flex gap-1.5">
-              {[1, 2, 3, 4, 5].map((s) => (
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Confidence:</span>
+            <div className="flex gap-1">
+              {[1, 2, 3, 4, 5].map((n) => (
                 <button
-                  key={s}
-                  onClick={() => scoreResponse(cat.id, s)}
-                  className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold transition-all ${
-                    scores[responseKey] >= s
-                      ? s <= 2 ? "bg-red-600 text-white" : s <= 3 ? "bg-amber-600 text-white" : "bg-emerald-600 text-white"
-                      : "bg-slate-800 text-slate-500 hover:bg-slate-700"
-                  }`}
+                  key={n}
+                  onClick={() => setScores({ ...scores, [responseKey]: n })}
+                  className="h-8 w-8 rounded-lg border-2 text-xs font-bold transition-all"
+                  style={{
+                    borderColor: scores[responseKey] >= n ? BRAND.red : BRAND.midGray,
+                    backgroundColor: scores[responseKey] >= n ? `${BRAND.red}10` : "white",
+                    color: scores[responseKey] >= n ? BRAND.red : BRAND.textMuted,
+                  }}
                 >
-                  {s}
+                  {n}
                 </button>
               ))}
             </div>
-            <span className="text-xs text-slate-500">
-              {scores[responseKey] <= 2 ? "⚠ Weak — revisit this" : scores[responseKey] <= 3 ? "Needs strengthening" : scores[responseKey] >= 4 ? "Strong position" : "Rate yourself"}
+            <span className="text-xs" style={{ color: BRAND.textMuted }}>
+              {scores[responseKey] <= 2 ? "⚠ Weak — revisit" : scores[responseKey] <= 3 ? "Needs work" : scores[responseKey] >= 4 ? "Strong" : "Rate yourself"}
             </span>
           </div>
 
           {/* Navigation */}
-          <div className="flex justify-between pt-2">
+          <div className="flex justify-between pt-2 border-t-2" style={{ borderColor: BRAND.midGray }}>
             <button
               onClick={() => setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))}
               disabled={currentQuestionIndex === 0}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-slate-400 hover:text-white disabled:opacity-30"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-30"
+              style={{ color: BRAND.textSecondary }}
             >
               <ChevronLeft size={16} /> Previous
             </button>
             <button
               onClick={() => {
-                const maxQ = CHALLENGER_QUESTIONS[cat.id]?.length || 4;
-                if (currentQuestionIndex < maxQ - 1) {
+                if (currentQuestionIndex < 3) {
                   setCurrentQuestionIndex(currentQuestionIndex + 1);
                 } else if (activeCategory < INTERROGATION_CATEGORIES.length - 1) {
                   setActiveCategory(activeCategory + 1);
                   setCurrentQuestionIndex(0);
                 }
               }}
-              className="flex items-center gap-1.5 rounded-lg bg-red-600/80 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl px-5 py-2 text-sm font-bold text-white transition-all"
+              style={{ backgroundColor: BRAND.red }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = BRAND.redHover}
+              onMouseLeave={(e) => e.target.style.backgroundColor = BRAND.red}
             >
               Next Challenge <ChevronRight size={16} />
             </button>
           </div>
-        </div>
+        </SectionCard>
 
         {/* Vulnerability Report */}
         {totalAnswered >= totalQuestions && (
-          <div className="rounded-xl border border-amber-700/30 bg-amber-950/20 p-5 space-y-4">
-            <h4 className="text-sm font-bold text-amber-300 flex items-center gap-2">
-              <AlertTriangle size={16} /> Vulnerability Assessment
+          <SectionCard>
+            <h4 className="text-sm font-bold flex items-center gap-2 mb-4" style={{ color: BRAND.navy }}>
+              <AlertTriangle size={16} style={{ color: "#d97706" }} /> Vulnerability Assessment
             </h4>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
               {INTERROGATION_CATEGORIES.map((c) => {
                 const catScores = Object.entries(scores)
                   .filter(([k]) => k.startsWith(c.id))
                   .map(([, v]) => v);
                 const avg = catScores.length > 0 ? (catScores.reduce((a, b) => a + b, 0) / catScores.length) : 0;
                 return (
-                  <div key={c.id} className="rounded-lg bg-slate-900/60 border border-slate-700/30 p-3">
-                    <p className="text-xs text-slate-400 mb-1">{c.label}</p>
+                  <div key={c.id} className="rounded-xl border-2 p-3" style={{ borderColor: BRAND.midGray }}>
+                    <p className="text-xs font-semibold mb-1" style={{ color: BRAND.textMuted }}>{c.label}</p>
                     <div className="flex items-center gap-2">
-                      <div className={`text-lg font-bold ${avg <= 2 ? "text-red-400" : avg <= 3 ? "text-amber-400" : "text-emerald-400"}`}>
+                      <span className="text-lg font-bold" style={{ color: avg <= 2 ? "#dc2626" : avg <= 3 ? "#d97706" : "#16a34a" }}>
                         {avg.toFixed(1)}
-                      </div>
-                      <span className="text-xs text-slate-500">/5</span>
+                      </span>
+                      <span className="text-xs" style={{ color: BRAND.textMuted }}>/5</span>
                     </div>
                   </div>
                 );
@@ -710,156 +1031,109 @@ const GauntletModule = ({ data, setData, horizonData, challenger, onComplete }) 
                 setData({
                   ...data,
                   interrogationResponses: responses,
-                  interrogationScores: scores
+                  interrogationScores: scores,
+                  competitors: allCompetitors,
+                  pmRatings,
+                  analysisResult,
                 });
                 onComplete();
               }}
-              className="w-full rounded-lg bg-amber-600 py-3 text-sm font-semibold text-white hover:bg-amber-500 transition-colors flex items-center justify-center gap-2"
+              className="w-full rounded-xl py-3 text-sm font-bold text-white flex items-center justify-center gap-2"
+              style={{ backgroundColor: BRAND.red }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = BRAND.redHover}
+              onMouseLeave={(e) => e.target.style.backgroundColor = BRAND.red}
             >
               <Crown size={16} />
               Survive The Gauntlet — Proceed to Monetization
             </button>
-          </div>
+          </SectionCard>
         )}
 
-        {/* Back to Wizard */}
+        {/* Back */}
         <button
-          onClick={() => setPhase("wizard")}
-          className="text-xs text-slate-500 hover:text-slate-400 flex items-center gap-1"
+          onClick={() => setPhase("results")}
+          className="text-xs flex items-center gap-1"
+          style={{ color: BRAND.textMuted }}
         >
-          <ChevronLeft size={12} /> Back to Competitive Setup
+          <ChevronLeft size={12} /> Back to Competitive Landscape
         </button>
       </div>
     );
   }
 
-  // WIZARD PHASE
-  return (
-    <div className="space-y-6">
-      {/* Step Indicator */}
-      <div className="flex items-center gap-2">
-        {wizardSteps.map((s, i) => {
-          const Icon = s.icon;
-          return (
-            <button
-              key={i}
-              onClick={() => setWizardStep(i)}
-              className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
-                wizardStep === i
-                  ? challenger
-                    ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
-                    : "border-blue-500/50 bg-blue-500/10 text-blue-300"
-                  : "border-slate-700/40 bg-slate-800/40 text-slate-400 hover:text-slate-300"
-              }`}
-            >
-              <Icon size={16} />
-              {s.title}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Active Step */}
-      <GlowBorder active={true} challenger={challenger}>
-        <div className={`rounded-xl border p-6 ${
-          challenger ? "border-amber-800/30 bg-slate-900/80" : "border-slate-700/30 bg-slate-900/80"
-        }`}>
-          <div className="mb-5">
-            <h3 className="text-lg font-semibold text-white">{wizardSteps[wizardStep].title}</h3>
-            <p className="text-sm text-slate-400 mt-1">{wizardSteps[wizardStep].subtitle}</p>
-          </div>
-          {wizardSteps[wizardStep].content}
-        </div>
-      </GlowBorder>
-
-      {/* Enter Interrogation */}
-      {canEnterInterrogation && (
-        <button
-          onClick={() => setPhase("interrogation")}
-          className="w-full rounded-xl border border-red-700/40 bg-gradient-to-r from-red-950/60 to-amber-950/60 py-4 px-6 text-sm font-semibold transition-all hover:from-red-900/60 hover:to-amber-900/60 flex items-center justify-center gap-3 group"
-        >
-          <Flame size={20} className="text-red-400 group-hover:animate-pulse" />
-          <span className="text-red-300">Enter Steel Man Interrogation</span>
-          <ArrowRight size={16} className="text-red-400" />
-        </button>
-      )}
-    </div>
-  );
+  return null;
 };
 
 // ─── MODULE 3: MONETIZATION ─────────────────────────────────────────────────
-const MonetizationModule = ({ data, setData, gauntletData, horizonData, challenger }) => {
+const MonetizationModule = ({ data, setData, gauntletData, horizonData }) => {
   const [activeTier, setActiveTier] = useState("growth");
 
-  const competitorNames = [
-    ...(gauntletData.directCompetitors || []).map(c => c.name),
-    ...(gauntletData.indirectCompetitors || []).map(c => c.name)
-  ].filter(Boolean);
+  const competitorNames = (gauntletData.competitors || []).map((c) => c.name).filter(Boolean);
 
   const weakAreas = useMemo(() => {
     const scores = gauntletData.interrogationScores || {};
     return INTERROGATION_CATEGORIES
-      .map(c => {
+      .map((c) => {
         const catScores = Object.entries(scores)
           .filter(([k]) => k.startsWith(c.id))
           .map(([, v]) => v);
         const avg = catScores.length > 0 ? catScores.reduce((a, b) => a + b, 0) / catScores.length : 3;
         return { ...c, avg };
       })
-      .filter(c => c.avg < 3.5)
+      .filter((c) => c.avg < 3.5)
       .sort((a, b) => a.avg - b.avg);
   }, [gauntletData]);
 
   return (
     <div className="space-y-6">
       {/* Inherited Intelligence */}
-      <div className={`rounded-xl border p-5 ${
-        challenger ? "border-amber-800/30 bg-amber-950/10" : "border-slate-700/30 bg-slate-800/20"
-      }`}>
-        <h4 className="text-sm font-bold text-slate-300 flex items-center gap-2 mb-3">
-          <Layers size={16} className={challenger ? "text-amber-400" : "text-blue-400"} />
+      <SectionCard>
+        <h4 className="text-sm font-bold flex items-center gap-2 mb-3" style={{ color: BRAND.navy }}>
+          <Layers size={16} style={{ color: BRAND.red }} />
           Inherited from The Gauntlet
         </h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="rounded-lg bg-slate-900/60 p-3 border border-slate-700/20">
-            <p className="text-xs text-slate-500 mb-1">Competitive Landscape</p>
-            <p className="text-sm text-slate-300">{competitorNames.join(", ") || "No competitors defined"}</p>
+          <div className="rounded-xl p-3" style={{ backgroundColor: BRAND.lightGray }}>
+            <p className="text-xs font-semibold mb-1" style={{ color: BRAND.textMuted }}>Competitive Landscape</p>
+            <p className="text-sm" style={{ color: BRAND.textPrimary }}>
+              {competitorNames.length > 0 ? `${competitorNames.length} competitors: ${competitorNames.slice(0, 5).join(", ")}${competitorNames.length > 5 ? ` +${competitorNames.length - 5} more` : ""}` : "No competitors defined"}
+            </p>
           </div>
-          <div className="rounded-lg bg-slate-900/60 p-3 border border-slate-700/20">
-            <p className="text-xs text-slate-500 mb-1">Beachhead</p>
-            <p className="text-sm text-slate-300">{gauntletData.beachhead || "Not yet defined"}</p>
+          <div className="rounded-xl p-3" style={{ backgroundColor: BRAND.lightGray }}>
+            <p className="text-xs font-semibold mb-1" style={{ color: BRAND.textMuted }}>Mission</p>
+            <p className="text-sm" style={{ color: BRAND.textPrimary }}>{horizonData.mission || "Not yet defined"}</p>
           </div>
         </div>
         {weakAreas.length > 0 && (
-          <div className="mt-3 rounded-lg bg-red-950/20 border border-red-800/20 p-3">
-            <p className="text-xs text-red-400 font-semibold mb-1">Pricing Risk Zones (from Interrogation)</p>
-            <p className="text-xs text-slate-400">
-              Your weak scores in {weakAreas.map(w => w.label).join(", ")} mean your pricing must account for higher churn risk and lower switching costs.
+          <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
+            <p className="text-xs font-bold mb-1" style={{ color: "#dc2626" }}>Pricing Risk Zones (from Interrogation)</p>
+            <p className="text-xs" style={{ color: BRAND.textSecondary }}>
+              Weak scores in {weakAreas.map((w) => w.label).join(", ")} mean pricing must account for higher churn risk.
             </p>
           </div>
         )}
-      </div>
+      </SectionCard>
 
-      {/* Pricing Strategy Input */}
-      <div className="space-y-4">
-        <TextArea
-          label="Value Metric (What You Charge For)"
-          value={data.valueMetric}
-          onChange={(v) => setData({ ...data, valueMetric: v })}
-          placeholder="The unit that scales with the customer's success. Not 'seats' unless your value scales with headcount. (e.g., 'video minutes delivered', 'API calls', 'GB encoded')"
-          rows={2}
-          challenger={challenger}
-          hint="The best value metrics correlate directly with the customer outcome your product enables."
-        />
-        <TextArea
-          label="Pricing Philosophy"
-          value={data.pricingPhilosophy}
-          onChange={(v) => setData({ ...data, pricingPhilosophy: v })}
-          placeholder="Value-based, cost-plus, or competitive? Why? How does this pricing create a moat — not just revenue?"
-          rows={2}
-          challenger={challenger}
-        />
-      </div>
+      {/* Pricing Strategy */}
+      <SectionCard>
+        <div className="space-y-4">
+          <TextArea
+            label="Value Metric (What You Charge For)"
+            value={data.valueMetric}
+            onChange={(v) => setData({ ...data, valueMetric: v })}
+            placeholder="The unit that scales with customer success. Not 'seats' unless value scales with headcount. (e.g., 'video minutes delivered', 'API calls', 'GB encoded')"
+            rows={2}
+            hint="The best value metrics correlate directly with the customer outcome your product enables."
+          />
+          <TextArea
+            label="Pricing Philosophy"
+            value={data.pricingPhilosophy}
+            onChange={(v) => setData({ ...data, pricingPhilosophy: v })}
+            placeholder="Value-based, cost-plus, or competitive? Why? How does this pricing create a moat — not just revenue?"
+            rows={2}
+          />
+        </div>
+      </SectionCard>
 
       {/* Tier Selector */}
       <div className="flex gap-3">
@@ -867,33 +1141,33 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData, challeng
           <button
             key={key}
             onClick={() => setActiveTier(key)}
-            className={`flex-1 rounded-xl border p-4 transition-all ${
-              activeTier === key
-                ? `border-transparent bg-gradient-to-b ${tier.color} shadow-lg`
-                : "border-slate-700/30 bg-slate-800/30 hover:border-slate-600"
-            }`}
+            className="flex-1 rounded-2xl border-2 p-4 transition-all"
+            style={{
+              borderColor: activeTier === key ? BRAND.red : BRAND.midGray,
+              backgroundColor: activeTier === key ? `${BRAND.red}05` : "white",
+            }}
           >
-            <p className={`text-sm font-bold ${activeTier === key ? "text-white" : "text-slate-300"}`}>{tier.name}</p>
-            <p className={`text-xs mt-0.5 ${activeTier === key ? "text-white/70" : "text-slate-500"}`}>{tier.subtitle}</p>
+            <p className="text-sm font-bold" style={{ color: activeTier === key ? BRAND.red : BRAND.navy }}>
+              {tier.name}
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: BRAND.textMuted }}>{tier.subtitle}</p>
           </button>
         ))}
       </div>
 
       {/* Active Tier Configuration */}
-      <GlowBorder active={true} challenger={challenger}>
-        <div className={`rounded-xl border p-6 space-y-5 ${
-          challenger ? "border-amber-800/30 bg-slate-900/80" : "border-slate-700/30 bg-slate-900/80"
-        }`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-white">{PRICING_TEMPLATES[activeTier].name} Tier</h3>
-              <p className="text-sm text-slate-400">{PRICING_TEMPLATES[activeTier].subtitle}</p>
-            </div>
-            <Badge challenger={challenger}>
-              {activeTier === "entry" ? "Land" : activeTier === "growth" ? "Expand" : "Lock-in"}
-            </Badge>
+      <SectionCard>
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>{PRICING_TEMPLATES[activeTier].name} Tier</h3>
+            <p className="text-sm" style={{ color: BRAND.textSecondary }}>{PRICING_TEMPLATES[activeTier].subtitle}</p>
           </div>
+          <Badge>
+            {activeTier === "entry" ? "Land" : activeTier === "growth" ? "Expand" : "Lock-in"}
+          </Badge>
+        </div>
 
+        <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <InputField
               label="Price Point"
@@ -903,7 +1177,6 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData, challeng
                 setData({ ...data, tiers: newTiers });
               }}
               placeholder={activeTier === "entry" ? "$0-99/mo" : activeTier === "growth" ? "$299-999/mo" : "Custom / $2,000+/mo"}
-              challenger={challenger}
             />
             <InputField
               label="Target Segment"
@@ -913,10 +1186,8 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData, challeng
                 setData({ ...data, tiers: newTiers });
               }}
               placeholder="Who is this tier designed for?"
-              challenger={challenger}
             />
           </div>
-
           <TextArea
             label="Included Capabilities"
             value={data.tiers?.[activeTier]?.capabilities || ""}
@@ -924,23 +1195,19 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData, challeng
               const newTiers = { ...(data.tiers || {}), [activeTier]: { ...(data.tiers?.[activeTier] || {}), capabilities: v } };
               setData({ ...data, tiers: newTiers });
             }}
-            placeholder="What's included at this tier? Be specific about limits — usage caps, feature gates, SLA levels."
+            placeholder="What's included? Be specific about limits — usage caps, feature gates, SLA levels."
             rows={3}
-            challenger={challenger}
           />
-
           <TextArea
-            label="Upgrade Trigger (What Makes Them Outgrow This Tier)"
+            label="Upgrade Trigger"
             value={data.tiers?.[activeTier]?.upgradeTrigger || ""}
             onChange={(v) => {
               const newTiers = { ...(data.tiers || {}), [activeTier]: { ...(data.tiers?.[activeTier] || {}), upgradeTrigger: v } };
               setData({ ...data, tiers: newTiers });
             }}
-            placeholder="What usage pattern or business event naturally pushes them to the next tier?"
+            placeholder="What usage pattern or business event pushes them to the next tier?"
             rows={2}
-            challenger={challenger}
           />
-
           <TextArea
             label="Margin Defense"
             value={data.tiers?.[activeTier]?.marginDefense || ""}
@@ -948,53 +1215,46 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData, challeng
               const newTiers = { ...(data.tiers || {}), [activeTier]: { ...(data.tiers?.[activeTier] || {}), marginDefense: v } };
               setData({ ...data, tiers: newTiers });
             }}
-            placeholder="Why can you sustain this margin? What cost advantages or value multipliers protect you from price compression?"
+            placeholder="Why can you sustain this margin? What cost advantages protect you from price compression?"
             rows={2}
-            challenger={challenger}
           />
         </div>
-      </GlowBorder>
+      </SectionCard>
 
-      {/* Unit Economics Summary */}
-      <div className={`rounded-xl border p-5 space-y-4 ${
-        challenger ? "border-amber-800/30 bg-amber-950/10" : "border-slate-700/30 bg-slate-800/20"
-      }`}>
-        <h4 className="text-sm font-bold text-slate-300 flex items-center gap-2">
-          <BarChart3 size={16} className={challenger ? "text-amber-400" : "text-blue-400"} />
+      {/* Unit Economics */}
+      <SectionCard>
+        <h4 className="text-sm font-bold flex items-center gap-2 mb-4" style={{ color: BRAND.navy }}>
+          <BarChart3 size={16} style={{ color: BRAND.red }} />
           Unit Economics Assumptions
         </h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <InputField
             label="Target CAC"
             value={data.cac || ""}
             onChange={(v) => setData({ ...data, cac: v })}
             placeholder="$X"
-            challenger={challenger}
           />
           <InputField
             label="Target LTV"
             value={data.ltv || ""}
             onChange={(v) => setData({ ...data, ltv: v })}
             placeholder="$X"
-            challenger={challenger}
           />
           <InputField
             label="LTV:CAC Ratio"
             value={data.ltvCacRatio || ""}
             onChange={(v) => setData({ ...data, ltvCacRatio: v })}
             placeholder="e.g., 4:1"
-            challenger={challenger}
           />
         </div>
         <TextArea
           label="Payback Period & Justification"
           value={data.paybackPeriod}
           onChange={(v) => setData({ ...data, paybackPeriod: v })}
-          placeholder="Months to recover CAC. If >12 months for SMB or >18 months for enterprise, justify why your retention assumptions support this."
+          placeholder="Months to recover CAC. If >12mo for SMB or >18mo for enterprise, justify your retention assumptions."
           rows={2}
-          challenger={challenger}
         />
-      </div>
+      </SectionCard>
     </div>
   );
 };
@@ -1002,87 +1262,52 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData, challeng
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
 export default function App() {
   const [activeModule, setActiveModule] = useState(0);
-  const [challengerMode, setChallengerMode] = useState(false);
   const [horizonLocked, setHorizonLocked] = useState(false);
   const [gauntletComplete, setGauntletComplete] = useState(false);
 
   const [horizonData, setHorizonData] = useState({
     mission: "", antiMission: "", tenets: ["", "", "", ""],
     tailwinds: "", headwinds: "", customerPain: "",
-    okrs: [{}, {}, {}]
+    okrs: [{}, {}, {}],
   });
   const [gauntletData, setGauntletData] = useState({
-    directCompetitors: [], indirectCompetitors: [],
-    beachhead: "", positioning: "", tradeoffs: "",
-    interrogationResponses: {}, interrogationScores: {}
+    competitors: [],
+    pmRatings: {},
+    analysisResult: null,
+    interrogationResponses: {},
+    interrogationScores: {},
   });
   const [monetizationData, setMonetizationData] = useState({
     valueMetric: "", pricingPhilosophy: "",
-    tiers: {}, cac: "", ltv: "", ltvCacRatio: "", paybackPeriod: ""
+    tiers: {}, cac: "", ltv: "", ltvCacRatio: "", paybackPeriod: "",
   });
 
   const modules = [
-    { id: "horizon", title: "The Horizon", subtitle: "Vision", icon: Eye, locked: false, complete: horizonLocked },
-    { id: "gauntlet", title: "The Gauntlet", subtitle: "Challenger", icon: Sword, locked: !horizonLocked, complete: gauntletComplete },
-    { id: "monetization", title: "Monetization", subtitle: "Value", icon: DollarSign, locked: !gauntletComplete, complete: false }
+    { id: "horizon", title: "The Horizon", subtitle: "Vision & Strategy", icon: Eye, locked: false, complete: horizonLocked },
+    { id: "gauntlet", title: "The Gauntlet", subtitle: "AI Competitive Analysis", icon: Sword, locked: !horizonLocked, complete: gauntletComplete },
+    { id: "monetization", title: "Monetization", subtitle: "Pricing & Value", icon: DollarSign, locked: !gauntletComplete, complete: false },
   ];
 
-  // Auto-enable challenger mode when entering Gauntlet
-  useEffect(() => {
-    if (activeModule === 1 && horizonLocked) {
-      setChallengerMode(true);
-    } else if (activeModule === 0) {
-      setChallengerMode(false);
-    }
-  }, [activeModule, horizonLocked]);
-
   return (
-    <div className={`min-h-screen transition-colors duration-700 ${
-      challengerMode
-        ? "bg-gradient-to-b from-slate-950 via-red-950/10 to-slate-950"
-        : "bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950"
-    }`}>
+    <div className="min-h-screen" style={{ backgroundColor: "#ffffff" }}>
       {/* Top Bar */}
-      <header className={`sticky top-0 z-50 border-b backdrop-blur-xl transition-colors duration-500 ${
-        challengerMode
-          ? "border-red-900/30 bg-slate-950/90"
-          : "border-slate-800/50 bg-slate-950/90"
-      }`}>
+      <header
+        className="sticky top-0 z-50 border-b-2 backdrop-blur-xl"
+        style={{ borderColor: BRAND.midGray, backgroundColor: "rgba(255,255,255,0.95)" }}
+      >
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className={`flex h-9 w-9 items-center justify-center rounded-lg font-black text-sm ${
-              challengerMode ? "bg-red-600 text-white" : "bg-blue-600 text-white"
-            }`}>
-              JWX
-            </div>
+            <JWLogo size={36} />
             <div>
-              <h1 className="text-sm font-bold text-white tracking-tight">Strategic Engine</h1>
-              <p className="text-[11px] text-slate-500">Strategy-First Product Architecture</p>
+              <h1 className="text-sm font-bold tracking-tight" style={{ color: BRAND.navy }}>Strategic Engine</h1>
+              <p className="text-[11px]" style={{ color: BRAND.textMuted }}>Strategy-First Product Architecture</p>
             </div>
           </div>
-
-          {/* Challenger Toggle */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2.5">
-              <span className={`text-xs font-medium ${challengerMode ? "text-red-400" : "text-slate-500"}`}>
-                Challenger Mode
-              </span>
-              <button
-                onClick={() => setChallengerMode(!challengerMode)}
-                className={`relative h-6 w-11 rounded-full transition-all duration-300 ${
-                  challengerMode
-                    ? "bg-gradient-to-r from-red-600 to-amber-600 shadow-lg shadow-red-500/20"
-                    : "bg-slate-700"
-                }`}
-              >
-                <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all duration-300 ${
-                  challengerMode ? "left-[22px]" : "left-0.5"
-                }`}>
-                  {challengerMode && (
-                    <Flame size={12} className="text-red-500 absolute top-1 left-1" />
-                  )}
-                </div>
-              </button>
+          <div className="flex items-center gap-3">
+            <Badge variant="danger">CHALLENGER MODE</Badge>
+            <div className="flex items-center gap-1.5">
+              <Flame size={16} style={{ color: BRAND.red }} className="animate-pulse" />
+              <span className="text-xs font-bold" style={{ color: BRAND.red }}>Always On</span>
             </div>
           </div>
         </div>
@@ -1101,49 +1326,41 @@ export default function App() {
                 key={mod.id}
                 onClick={() => !isLocked && setActiveModule(i)}
                 disabled={isLocked}
-                className={`relative rounded-xl border p-4 text-left transition-all duration-300 ${
-                  isLocked
-                    ? "border-slate-800/40 bg-slate-900/30 opacity-40 cursor-not-allowed"
-                    : isActive
-                      ? challengerMode
-                        ? "border-red-500/40 bg-red-950/20 shadow-lg shadow-red-500/5"
-                        : "border-blue-500/40 bg-blue-950/20 shadow-lg shadow-blue-500/5"
-                      : "border-slate-700/30 bg-slate-800/20 hover:border-slate-600 cursor-pointer"
-                }`}
+                className="relative rounded-2xl border-2 p-4 text-left transition-all duration-300"
+                style={{
+                  borderColor: isLocked ? BRAND.midGray : isActive ? BRAND.red : BRAND.midGray,
+                  backgroundColor: isLocked ? "#f9fafb" : isActive ? `${BRAND.red}05` : "white",
+                  opacity: isLocked ? 0.4 : 1,
+                  cursor: isLocked ? "not-allowed" : "pointer",
+                }}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                    mod.complete
-                      ? "bg-emerald-900/50"
-                      : isActive
-                        ? challengerMode ? "bg-red-900/50" : "bg-blue-900/50"
-                        : "bg-slate-800"
-                  }`}>
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-xl"
+                    style={{
+                      backgroundColor: mod.complete ? "#dcfce7" : isActive ? `${BRAND.red}10` : BRAND.lightGray,
+                    }}
+                  >
                     {mod.complete ? (
-                      <Check size={18} className="text-emerald-400" />
+                      <Check size={18} style={{ color: "#16a34a" }} />
                     ) : isLocked ? (
-                      <Lock size={18} className="text-slate-600" />
+                      <Lock size={18} style={{ color: BRAND.textMuted }} />
                     ) : (
-                      <Icon size={18} className={
-                        isActive
-                          ? challengerMode ? "text-red-400" : "text-blue-400"
-                          : "text-slate-400"
-                      } />
+                      <Icon size={18} style={{ color: isActive ? BRAND.red : BRAND.textSecondary }} />
                     )}
                   </div>
                   <div>
-                    <p className={`text-sm font-semibold ${isActive ? "text-white" : "text-slate-300"}`}>
+                    <p className="text-sm font-bold" style={{ color: isActive ? BRAND.navy : BRAND.textSecondary }}>
                       {mod.title}
                     </p>
-                    <p className="text-xs text-slate-500">{mod.subtitle}</p>
+                    <p className="text-xs" style={{ color: BRAND.textMuted }}>{mod.subtitle}</p>
                   </div>
                 </div>
                 {isActive && (
-                  <div className={`absolute bottom-0 left-4 right-4 h-0.5 rounded-full ${
-                    challengerMode
-                      ? "bg-gradient-to-r from-red-500 to-amber-500"
-                      : "bg-gradient-to-r from-blue-500 to-cyan-400"
-                  }`} />
+                  <div
+                    className="absolute bottom-0 left-4 right-4 h-1 rounded-full"
+                    style={{ backgroundColor: BRAND.red }}
+                  />
                 )}
               </button>
             );
@@ -1151,15 +1368,18 @@ export default function App() {
         </div>
 
         {/* Challenger Mode Banner */}
-        {challengerMode && activeModule === 1 && (
-          <div className="mb-6 rounded-xl border border-red-800/30 bg-gradient-to-r from-red-950/30 via-slate-900/80 to-amber-950/30 p-4 flex items-center gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-900/40">
-              <Flame size={24} className="text-red-400 animate-pulse" />
+        {activeModule === 1 && (
+          <div
+            className="mb-6 rounded-2xl border-2 p-4 flex items-center gap-4"
+            style={{ borderColor: `${BRAND.red}30`, backgroundColor: `${BRAND.red}03` }}
+          >
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: `${BRAND.red}10` }}>
+              <Flame size={24} style={{ color: BRAND.red }} className="animate-pulse" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-bold text-red-300">CHALLENGER MODE ACTIVE</p>
-              <p className="text-xs text-slate-400">
-                The system is now acting as your smartest competitor's strategist. Expect hostility. It's by design.
+              <p className="text-sm font-bold" style={{ color: BRAND.red }}>CHALLENGER MODE ACTIVE</p>
+              <p className="text-xs" style={{ color: BRAND.textSecondary }}>
+                The system acts as your smartest competitor's strategist. Expect hostility — it's by design.
               </p>
             </div>
             <Badge variant="danger">HOSTILE</Badge>
@@ -1171,7 +1391,6 @@ export default function App() {
           <HorizonModule
             data={horizonData}
             setData={setHorizonData}
-            challenger={challengerMode}
             onComplete={() => {
               setHorizonLocked(true);
               setActiveModule(1);
@@ -1183,7 +1402,6 @@ export default function App() {
             data={gauntletData}
             setData={setGauntletData}
             horizonData={horizonData}
-            challenger={challengerMode}
             onComplete={() => {
               setGauntletComplete(true);
               setActiveModule(2);
@@ -1196,18 +1414,18 @@ export default function App() {
             setData={setMonetizationData}
             gauntletData={gauntletData}
             horizonData={horizonData}
-            challenger={challengerMode}
           />
         )}
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/30 mt-16">
+      <footer className="border-t-2 mt-16" style={{ borderColor: BRAND.midGray }}>
         <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
-          <p className="text-xs text-slate-600">JWX Strategic Engine v1.0 — Strategy-First Product Architecture</p>
-          <div className="flex items-center gap-2 text-xs text-slate-600">
-            <span>Built for PMs who ship, not PMs who spec</span>
+          <div className="flex items-center gap-2">
+            <JWLogo size={20} />
+            <p className="text-xs" style={{ color: BRAND.textMuted }}>JWX Strategic Engine v2.0</p>
           </div>
+          <p className="text-xs" style={{ color: BRAND.textMuted }}>Built for PMs who ship, not PMs who spec</p>
         </div>
       </footer>
     </div>
