@@ -376,18 +376,35 @@ const HorizonModule = ({ data, setData, onComplete }) => {
 
 // ─── MODULE 2: THE GAUNTLET (AI-POWERED) ────────────────────────────────────
 const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
-  const [phase, setPhase] = useState("setup"); // setup | analyzing | results | interrogation
-  const [analysisResult, setAnalysisResult] = useState(null);
+  // Restore state from persisted data if available
+  const [phase, setPhase] = useState(data.analysisResult ? "results" : "setup");
+  const [analysisResult, setAnalysisResult] = useState(data.analysisResult || null);
   const [analysisError, setAnalysisError] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [manualCompetitors, setManualCompetitors] = useState([]);
+  const [manualCompetitors, setManualCompetitors] = useState(data.manualCompetitors || []);
   const [newCompetitorName, setNewCompetitorName] = useState("");
-  const [pmRatings, setPmRatings] = useState({});
+  const [pmRatings, setPmRatings] = useState(data.pmRatings || {});
   const [activeCategory, setActiveCategory] = useState(0);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [responses, setResponses] = useState(data.interrogationResponses || {});
   const [scores, setScores] = useState(data.interrogationScores || {});
   const [competitorFilter, setCompetitorFilter] = useState("all");
+
+  // Persist Gauntlet internal state back to parent on changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setData((prev) => ({
+        ...prev,
+        analysisResult,
+        manualCompetitors,
+        pmRatings,
+        interrogationResponses: responses,
+        interrogationScores: scores,
+      }));
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisResult, manualCompetitors, pmRatings, responses, scores]);
 
   // Challenger questions from AI or fallback
   const challengerQuestions = useMemo(() => {
@@ -470,7 +487,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
                 AI Competitive Intelligence Engine
               </h3>
               <p className="text-sm" style={{ color: BRAND.textSecondary }}>
-                Claude will analyze your Horizon data and deliver a deep competitive landscape analysis
+                AI will analyze your Horizon data and deliver a deep competitive landscape analysis
               </p>
             </div>
           </div>
@@ -487,7 +504,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
                 "Market dynamics & consolidation trends",
                 "Switching costs & regulatory factors",
                 "Strategic recommendations",
-                "24 tailored challenger questions",
+                "12 pointed challenger questions tied to your competitors",
               ].map((item, i) => (
                 <div key={i} className="flex items-start gap-2 text-sm" style={{ color: BRAND.textSecondary }}>
                   <Check size={14} className="mt-0.5 shrink-0" style={{ color: "#16a34a" }} />
@@ -838,7 +855,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
           }}
         >
           <Flame size={20} className="group-hover:animate-pulse" />
-          Enter Steel Man Interrogation — {challengerQuestions ? "24 AI-Tailored Questions" : "24 Questions"}
+          Enter Steel Man Interrogation — {challengerQuestions ? "12 AI-Tailored Questions" : "12 Questions"}
           <ArrowRight size={16} />
         </button>
       </div>
@@ -854,7 +871,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
     const responseKey = `${cat.id}_${currentQuestionIndex}`;
 
     const totalAnswered = Object.keys(responses).filter((k) => responses[k]).length;
-    const totalQuestions = INTERROGATION_CATEGORIES.length * 4;
+    const totalQuestions = INTERROGATION_CATEGORIES.length * 2;
     const catAnswered = Object.keys(responses).filter((k) => k.startsWith(cat.id) && responses[k]).length;
 
     return (
@@ -902,10 +919,10 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
                 <Icon size={14} />
                 {c.label}
                 <span className="rounded-full px-1.5 py-0.5 text-[10px]" style={{
-                  backgroundColor: answered === 4 ? "#dcfce7" : `${BRAND.red}10`,
-                  color: answered === 4 ? "#16a34a" : BRAND.red,
+                  backgroundColor: answered === 2 ? "#dcfce7" : `${BRAND.red}10`,
+                  color: answered === 2 ? "#16a34a" : BRAND.red,
                 }}>
-                  {answered}/4
+                  {answered}/2
                 </span>
               </button>
             );
@@ -917,7 +934,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
           <div className="flex items-center gap-2 mb-4">
             <CatIcon size={18} style={{ color: BRAND.red }} />
             <h4 className="text-sm font-bold" style={{ color: BRAND.navy }}>
-              {cat.label} — Question {currentQuestionIndex + 1}/4
+              {cat.label} — Question {currentQuestionIndex + 1}/2
             </h4>
           </div>
 
@@ -948,28 +965,59 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
             onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
           />
 
-          {/* Self-Score */}
-          <div className="flex items-center gap-3 mb-4">
-            <span className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Confidence:</span>
-            <div className="flex gap-1">
-              {[1, 2, 3, 4, 5].map((n) => (
+          {/* Immediate Answer Value Assessment */}
+          <div className="rounded-xl border-2 p-4 mb-4 space-y-3" style={{ borderColor: BRAND.midGray }}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: BRAND.navy }}>Rate Your Answer</span>
+              {scores[responseKey] && (
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{
+                  backgroundColor: scores[responseKey] <= 2 ? "#fef2f2" : scores[responseKey] <= 3 ? "#fffbeb" : "#f0fdf4",
+                  color: scores[responseKey] <= 2 ? "#dc2626" : scores[responseKey] <= 3 ? "#d97706" : "#16a34a",
+                }}>
+                  {scores[responseKey] <= 2 ? "VULNERABILITY DETECTED" : scores[responseKey] <= 3 ? "NEEDS STRENGTHENING" : scores[responseKey] >= 4 ? "DEFENSIBLE" : ""}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              {[
+                { val: 1, label: "No Answer", desc: "Can't defend this" },
+                { val: 2, label: "Weak", desc: "Hand-waving" },
+                { val: 3, label: "Partial", desc: "Some evidence" },
+                { val: 4, label: "Strong", desc: "Data-backed" },
+                { val: 5, label: "Bulletproof", desc: "Unassailable" },
+              ].map((option) => (
                 <button
-                  key={n}
-                  onClick={() => setScores({ ...scores, [responseKey]: n })}
-                  className="h-8 w-8 rounded-lg border-2 text-xs font-bold transition-all"
+                  key={option.val}
+                  onClick={() => setScores({ ...scores, [responseKey]: option.val })}
+                  className="flex-1 rounded-lg border-2 py-2 px-1 text-center transition-all"
                   style={{
-                    borderColor: scores[responseKey] >= n ? BRAND.red : BRAND.midGray,
-                    backgroundColor: scores[responseKey] >= n ? `${BRAND.red}10` : "white",
-                    color: scores[responseKey] >= n ? BRAND.red : BRAND.textMuted,
+                    borderColor: scores[responseKey] === option.val ? BRAND.red : BRAND.midGray,
+                    backgroundColor: scores[responseKey] === option.val ? `${BRAND.red}10` : "white",
                   }}
                 >
-                  {n}
+                  <div className="text-xs font-bold" style={{ color: scores[responseKey] === option.val ? BRAND.red : BRAND.navy }}>{option.label}</div>
+                  <div className="text-[10px]" style={{ color: BRAND.textMuted }}>{option.desc}</div>
                 </button>
               ))}
             </div>
-            <span className="text-xs" style={{ color: BRAND.textMuted }}>
-              {scores[responseKey] <= 2 ? "⚠ Weak — revisit" : scores[responseKey] <= 3 ? "Needs work" : scores[responseKey] >= 4 ? "Strong" : "Rate yourself"}
-            </span>
+            {scores[responseKey] && scores[responseKey] <= 2 && responses[responseKey] && (
+              <div className="rounded-lg p-3 flex items-start gap-2" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" style={{ color: "#dc2626" }} />
+                <div>
+                  <p className="text-xs font-bold" style={{ color: "#dc2626" }}>Strategic Gap Identified</p>
+                  <p className="text-[11px]" style={{ color: "#991b1b" }}>This weak spot will surface in competitive deals. Flag it for your strategy sprint.</p>
+                </div>
+              </div>
+            )}
+            {scores[responseKey] && scores[responseKey] >= 4 && responses[responseKey] && (
+              <div className="rounded-lg p-3 flex items-start gap-2" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                <Shield size={14} className="mt-0.5 shrink-0" style={{ color: "#16a34a" }} />
+                <div>
+                  <p className="text-xs font-bold" style={{ color: "#16a34a" }}>Competitive Moat Confirmed</p>
+                  <p className="text-[11px]" style={{ color: "#166534" }}>Use this defense in sales enablement and competitive positioning docs.</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Navigation */}
@@ -984,7 +1032,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
             </button>
             <button
               onClick={() => {
-                if (currentQuestionIndex < 3) {
+                if (currentQuestionIndex < 1) {
                   setCurrentQuestionIndex(currentQuestionIndex + 1);
                 } else if (activeCategory < INTERROGATION_CATEGORIES.length - 1) {
                   setActiveCategory(activeCategory + 1);
@@ -1259,28 +1307,62 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData }) => {
   );
 };
 
+// ─── PERSISTENCE HELPERS ────────────────────────────────────────────────────
+const STORAGE_KEY = "jwx-strategic-engine";
+
+const loadState = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+};
+
+const saveState = (state) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // localStorage full or unavailable — silently fail
+  }
+};
+
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
 export default function App() {
-  const [activeModule, setActiveModule] = useState(0);
-  const [horizonLocked, setHorizonLocked] = useState(false);
-  const [gauntletComplete, setGauntletComplete] = useState(false);
+  const saved = useMemo(() => loadState(), []);
 
-  const [horizonData, setHorizonData] = useState({
+  const [activeModule, setActiveModule] = useState(saved?.activeModule ?? 0);
+  const [horizonLocked, setHorizonLocked] = useState(saved?.horizonLocked ?? false);
+  const [gauntletComplete, setGauntletComplete] = useState(saved?.gauntletComplete ?? false);
+
+  const [horizonData, setHorizonData] = useState(saved?.horizonData ?? {
     mission: "", antiMission: "", tenets: ["", "", "", ""],
     tailwinds: "", headwinds: "", customerPain: "",
     okrs: [{}, {}, {}],
   });
-  const [gauntletData, setGauntletData] = useState({
+  const [gauntletData, setGauntletData] = useState(saved?.gauntletData ?? {
     competitors: [],
     pmRatings: {},
     analysisResult: null,
     interrogationResponses: {},
     interrogationScores: {},
   });
-  const [monetizationData, setMonetizationData] = useState({
+  const [monetizationData, setMonetizationData] = useState(saved?.monetizationData ?? {
     valueMetric: "", pricingPhilosophy: "",
     tiers: {}, cac: "", ltv: "", ltvCacRatio: "", paybackPeriod: "",
   });
+
+  // Auto-save all state on every change
+  useEffect(() => {
+    saveState({
+      activeModule,
+      horizonLocked,
+      gauntletComplete,
+      horizonData,
+      gauntletData,
+      monetizationData,
+    });
+  }, [activeModule, horizonLocked, gauntletComplete, horizonData, gauntletData, monetizationData]);
 
   const modules = [
     { id: "horizon", title: "The Horizon", subtitle: "Vision & Strategy", icon: Eye, locked: false, complete: horizonLocked },
@@ -1425,7 +1507,16 @@ export default function App() {
             <JWLogo size={20} />
             <p className="text-xs" style={{ color: BRAND.textMuted }}>JWX Strategic Engine v2.0</p>
           </div>
-          <p className="text-xs" style={{ color: BRAND.textMuted }}>Built for PMs who ship, not PMs who spec</p>
+          <div className="flex items-center gap-4">
+            <p className="text-xs" style={{ color: BRAND.textMuted }}>Built for PMs who ship, not PMs who spec</p>
+            <button
+              onClick={() => { if (window.confirm("Clear all saved data and start fresh?")) { localStorage.removeItem(STORAGE_KEY); window.location.reload(); } }}
+              className="text-[10px] px-2 py-1 rounded border"
+              style={{ borderColor: BRAND.midGray, color: BRAND.textMuted }}
+            >
+              Reset All
+            </button>
+          </div>
         </div>
       </footer>
     </div>
