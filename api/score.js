@@ -1,14 +1,14 @@
 // api/score.js — Vercel Serverless Function
-// AI evaluates a challenger question answer and generates a follow-up
+// AI evaluates a challenger question answer and generates a follow-up (Gemini 2.5 Pro)
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: "OPENAI_API_KEY not configured" });
+    return res.status(500).json({ error: "GEMINI_API_KEY not configured" });
   }
 
   try {
@@ -58,31 +58,45 @@ SCORING GUIDE:
 
 Be tough but fair. Most answers should score 2-3. A 5 should be rare.`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        max_tokens: 1500,
-        temperature: 0.7,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: "You are a ruthless but fair competitive strategy evaluator. Always respond with valid JSON only. Never give easy passes — most answers deserve a 2 or 3." },
-          { role: "user", content: prompt },
-        ],
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-05-06:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }],
+            },
+          ],
+          systemInstruction: {
+            parts: [
+              {
+                text: "You are a ruthless but fair competitive strategy evaluator. Always respond with valid JSON only — no markdown, no code blocks, just raw JSON. Never give easy passes — most answers deserve a 2 or 3.",
+              },
+            ],
+          },
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 2000,
+            responseMimeType: "application/json",
+          },
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(response.status).json({ error: `OpenAI API error: ${errText}` });
+      return res.status(response.status).json({ error: `Gemini API error: ${errText}` });
     }
 
     const data = await response.json();
-    const text = data.choices[0].message.content;
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      return res.status(500).json({ error: "No content in Gemini response", raw: data });
+    }
+
     const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/```\s*([\s\S]*?)```/);
     const jsonStr = jsonMatch ? jsonMatch[1] : text;
     const evaluation = JSON.parse(jsonStr.trim());
