@@ -48,13 +48,16 @@ const PRICING_TEMPLATES = {
   },
 };
 
-// ─── JW PLAYER LOGO SVG ────────────────────────────────────────────────────
+// ─── JW PLAYER LOGO ────────────────────────────────────────────────────────
+// Place the actual JW Player logo at public/jw-logo.png in the repo
 const JWLogo = ({ size = 32 }) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
-    <rect width="40" height="40" rx="8" fill={BRAND.red} />
-    <text x="7" y="27" fontFamily="Arial Black, sans-serif" fontWeight="900" fontSize="16" fill="white">JW</text>
-    <polygon points="30,14 30,26 36,20" fill="white" />
-  </svg>
+  <img
+    src="/jw-logo.png"
+    alt="JW Player"
+    width={size}
+    height={size}
+    style={{ objectFit: "contain", background: "transparent" }}
+  />
 );
 
 // ─── REUSABLE COMPONENTS ────────────────────────────────────────────────────
@@ -991,16 +994,12 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
             onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
           />
 
-          {/* Step 1: PM Self-Rating (before AI sees it) */}
-          {!evaluations[responseKey] && responses[responseKey]?.trim() && (
-            <div className="rounded-xl border-2 p-4 mb-4 space-y-3" style={{ borderColor: pmScores[responseKey] ? BRAND.red : BRAND.midGray, backgroundColor: pmScores[responseKey] ? `${BRAND.red}03` : "white" }}>
+          {/* PM Self-Rating — auto-triggers AI evaluation on click */}
+          {!evaluations[responseKey] && !isScoring && responses[responseKey]?.trim() && (
+            <div className="rounded-xl border-2 p-4 mb-4 space-y-3" style={{ borderColor: BRAND.midGray }}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: BRAND.navy }}>Step 1: Rate Your Own Answer</span>
-                {pmScores[responseKey] && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${BRAND.red}10`, color: BRAND.red }}>
-                    LOCKED IN — NOW LET AI JUDGE
-                  </span>
-                )}
+                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: BRAND.navy }}>Rate Your Answer</span>
+                <span className="text-[10px]" style={{ color: BRAND.textMuted }}>AI evaluation starts automatically</span>
               </div>
               <p className="text-xs" style={{ color: BRAND.textMuted }}>Be honest — the AI will score you next, and we'll compare.</p>
               <div className="flex gap-2">
@@ -1013,57 +1012,45 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
                 ].map((option) => (
                   <button
                     key={option.val}
-                    onClick={() => setPmScores({ ...pmScores, [responseKey]: option.val })}
-                    disabled={!!evaluations[responseKey]}
+                    onClick={async () => {
+                      // Lock in PM score and immediately trigger AI evaluation
+                      const updatedPmScores = { ...pmScores, [responseKey]: option.val };
+                      setPmScores(updatedPmScores);
+                      setIsScoring(true);
+                      setScoringError(null);
+                      try {
+                        const competitorSummary = (analysisResult?.competitors || [])
+                          .map(c => `${c.name} (${c.category}, risk: ${c.aiRiskRating}): ${c.description}`)
+                          .join("\n");
+                        const horizonSummary = `Mission: ${horizonData.mission}\nAnti-Mission: ${horizonData.antiMission}\nTailwinds: ${horizonData.tailwinds}\nHeadwinds: ${horizonData.headwinds}\nCustomer Pain: ${horizonData.customerPain}`;
+                        const evaluation = await callScoringAPI({
+                          question: currentQ?.question || "",
+                          answer: responses[responseKey],
+                          context: currentQ?.context || "",
+                          category: cat.label,
+                          competitorContext: competitorSummary,
+                          horizonContext: horizonSummary,
+                        });
+                        setEvaluations((prev) => ({ ...prev, [responseKey]: evaluation }));
+                        setScores((prev) => ({ ...prev, [responseKey]: evaluation.score }));
+                      } catch (err) {
+                        setScoringError(err.message);
+                      } finally {
+                        setIsScoring(false);
+                      }
+                    }}
                     className="flex-1 rounded-lg border-2 py-2 px-1 text-center transition-all"
                     style={{
-                      borderColor: pmScores[responseKey] === option.val ? BRAND.red : BRAND.midGray,
-                      backgroundColor: pmScores[responseKey] === option.val ? `${BRAND.red}10` : "white",
+                      borderColor: BRAND.midGray,
+                      backgroundColor: "white",
                     }}
                   >
-                    <div className="text-xs font-bold" style={{ color: pmScores[responseKey] === option.val ? BRAND.red : BRAND.navy }}>{option.label}</div>
+                    <div className="text-xs font-bold" style={{ color: BRAND.navy }}>{option.label}</div>
                     <div className="text-[10px]" style={{ color: BRAND.textMuted }}>{option.desc}</div>
                   </button>
                 ))}
               </div>
             </div>
-          )}
-
-          {/* Step 2: Submit for AI Evaluation (requires answer + self-rating) */}
-          {!evaluations[responseKey] && !isScoring && pmScores[responseKey] && responses[responseKey]?.trim() && (
-            <button
-              onClick={async () => {
-                setIsScoring(true);
-                setScoringError(null);
-                try {
-                  const competitorSummary = (analysisResult?.competitors || [])
-                    .map(c => `${c.name} (${c.category}, risk: ${c.aiRiskRating}): ${c.description}`)
-                    .join("\n");
-                  const horizonSummary = `Mission: ${horizonData.mission}\nAnti-Mission: ${horizonData.antiMission}\nTailwinds: ${horizonData.tailwinds}\nHeadwinds: ${horizonData.headwinds}\nCustomer Pain: ${horizonData.customerPain}`;
-                  const evaluation = await callScoringAPI({
-                    question: currentQ?.question || "",
-                    answer: responses[responseKey],
-                    context: currentQ?.context || "",
-                    category: cat.label,
-                    competitorContext: competitorSummary,
-                    horizonContext: horizonSummary,
-                  });
-                  setEvaluations({ ...evaluations, [responseKey]: evaluation });
-                  setScores({ ...scores, [responseKey]: evaluation.score });
-                } catch (err) {
-                  setScoringError(err.message);
-                } finally {
-                  setIsScoring(false);
-                }
-              }}
-              className="w-full rounded-xl px-6 py-3 text-sm font-bold text-white transition-all flex items-center justify-center gap-2 mb-4"
-              style={{ backgroundColor: BRAND.navy }}
-              onMouseEnter={(e) => e.target.style.backgroundColor = BRAND.red}
-              onMouseLeave={(e) => e.target.style.backgroundColor = BRAND.navy}
-            >
-              <Brain size={16} />
-              Submit for AI Evaluation — You Rated Yourself {pmScores[responseKey]}/5
-            </button>
           )}
 
           {/* Scoring in Progress */}
