@@ -30,25 +30,6 @@ const INTERROGATION_CATEGORIES = [
   { id: "strategy", label: "Strategic Leverage", icon: Target, description: "Asymmetric advantages" },
 ];
 
-// ─── PRICING TEMPLATES ──────────────────────────────────────────────────────
-const PRICING_TEMPLATES = {
-  entry: {
-    name: "Entry",
-    subtitle: "Land & Prove Value",
-    color: "from-blue-500/20 to-blue-600/10",
-  },
-  growth: {
-    name: "Growth",
-    subtitle: "Expand & Entrench",
-    color: "from-emerald-500/20 to-emerald-600/10",
-  },
-  enterprise: {
-    name: "Enterprise",
-    subtitle: "Lock-in & Maximize",
-    color: "from-purple-500/20 to-purple-600/10",
-  },
-};
-
 // ─── JW PLAYER LOGO ────────────────────────────────────────────────────────
 const JWLogo = ({ size = 32 }) => (
   <img
@@ -143,7 +124,7 @@ const EnhancedTextArea = ({ label, value, onChange, placeholder, rows = 3, hint,
           ) : (
             <>
               <Sparkles size={12} />
-              Help me make this better
+              Expand with AI
             </>
           )}
         </button>
@@ -312,6 +293,22 @@ const callEnhanceAPI = async ({ fieldLabel, fieldHint, draft, fullContext }) => 
   return response.json();
 };
 
+// ─── AI MONETIZATION MARKET ANALYSIS (Gemini) ──────────────────────────────
+const callMonetizationAnalysisAPI = async ({ horizonData, competitiveAnalysis }) => {
+  const response = await fetch("/api/monetization-analysis", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ horizonData, competitiveAnalysis }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error(err.error || `API Error ${response.status}`);
+  }
+
+  return response.json();
+};
+
 // ─── AI SCORING ENGINE ─────────────────────────────────────────────────────
 const callScoringAPI = async ({ question, answer, context, category, competitorContext, horizonContext }) => {
   const response = await fetch("/api/score", {
@@ -334,247 +331,254 @@ const RED_RGB = [236, 0, 65];
 const GRAY_RGB = [74, 80, 104];
 const LIGHT_GRAY_RGB = [136, 144, 164];
 
+// Derive a safe filename from the product idea (Press Release hook or innovation)
+const sanitizeFilename = (s) => {
+  if (!s) return "Product-Dossier";
+  return s
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 60) || "Product-Dossier";
+};
+
+// Draw a simple JWX logo mark (red square with white "JWX")
+const drawJwxLogo = (doc, x, y, size = 12) => {
+  doc.setFillColor(...RED_RGB);
+  doc.roundedRect(x, y, size, size, 1.5, 1.5, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(size * 0.55);
+  doc.setTextColor(255, 255, 255);
+  doc.text("JWX", x + size / 2, y + size * 0.66, { align: "center" });
+};
+
 const generateDossier = (horizonData, gauntletData, monetizationData) => {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = 210;
-  const M = 20; // margin
-  const CW = W - 2 * M; // content width
+  const H = 297;
+  const M = 20;
+  const CW = W - 2 * M;
+  const BOTTOM = 275;
   let y = 0;
 
-  const addPage = () => { doc.addPage(); y = M; };
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const newPage = () => { doc.addPage(); y = M; };
 
-  const heading = (text, size = 14) => {
+  const ensureSpace = (needed = 20) => {
+    if (y + needed > BOTTOM) newPage();
+  };
+
+  const heading = (text, size = 18, color = NAVY_RGB) => {
+    ensureSpace(size * 0.6 + 6);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(size);
-    doc.setTextColor(...NAVY_RGB);
+    doc.setTextColor(...color);
     doc.text(text, M, y);
-    y += size * 0.5 + 2;
+    y += size * 0.55 + 3;
   };
 
   const subheading = (text) => {
+    ensureSpace(10);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
+    doc.setFontSize(11);
     doc.setTextColor(...RED_RGB);
     doc.text(text, M, y);
     y += 6;
   };
 
-  const body = (text, indent = 0) => {
+  const label = (text) => {
+    ensureSpace(6);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...NAVY_RGB);
+    doc.text(text.toUpperCase(), M, y);
+    y += 4;
+  };
+
+  const body = (text, indent = 0, size = 9.5) => {
     if (!text) return;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(size);
     doc.setTextColor(...GRAY_RGB);
-    const lines = doc.splitTextToSize(text, CW - indent);
-    doc.text(lines, M + indent, y);
-    y += lines.length * 4.2;
+    const lines = doc.splitTextToSize(String(text), CW - indent);
+    // Page-break aware rendering
+    const lineHeight = size * 0.45;
+    lines.forEach((line) => {
+      ensureSpace(lineHeight + 1);
+      doc.text(line, M + indent, y);
+      y += lineHeight;
+    });
+    y += 1;
+  };
+
+  const fieldBlock = (labelText, value) => {
+    if (!value || !String(value).trim()) return;
+    label(labelText);
+    body(value, 0, 9.5);
+    y += 2;
   };
 
   const spacer = (h = 4) => { y += h; };
 
   const divider = () => {
+    ensureSpace(6);
     doc.setDrawColor(...RED_RGB);
     doc.setLineWidth(0.5);
     doc.line(M, y, W - M, y);
     y += 4;
   };
 
-  const checkPageSpace = (needed = 30) => {
-    if (y + needed > 277) addPage();
+  // Section break page — big title, optional subtitle
+  const sectionCoverPage = (number, title, subtitle) => {
+    newPage();
+    // Background accent bar on left edge
+    doc.setFillColor(...RED_RGB);
+    doc.rect(0, M + 20, 8, 60, "F");
+    // Section number
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(54);
+    doc.setTextColor(...RED_RGB);
+    doc.text(String(number), M + 4, M + 50);
+    // Section title
+    doc.setFontSize(24);
+    doc.setTextColor(...NAVY_RGB);
+    doc.text(title, M + 4, M + 70);
+    if (subtitle) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.setTextColor(...GRAY_RGB);
+      const subLines = doc.splitTextToSize(subtitle, CW - 4);
+      doc.text(subLines, M + 4, M + 80);
+    }
+    // Logo in corner
+    drawJwxLogo(doc, W - M - 12, M, 12);
+    y = M + 110;
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PAGE 1: EXECUTIVE ROUNDUP
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Red banner at top
-  doc.setFillColor(...RED_RGB);
-  doc.rect(0, 0, W, 45, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(28);
-  doc.setTextColor(255, 255, 255);
-  doc.text("Strategic Dossier", M, 25);
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "normal");
-  doc.text("JWX Strategic Engine — Executive Review", M, 35);
-
-  // Date
-  doc.setFontSize(9);
-  doc.text(new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }), W - M, 35, { align: "right" });
-
-  y = 60;
-
-  // The Idea (Press Release Hook + Innovation)
-  heading("THE IDEA", 16);
-  spacer(2);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
-  doc.setTextColor(...NAVY_RGB);
-  const hookLines = doc.splitTextToSize(horizonData.prHook || "Not defined", CW);
-  doc.text(hookLines, M, y);
-  y += hookLines.length * 5.5 + 4;
-
-  if (horizonData.prInnovation) {
-    subheading("The Innovation");
-    body(horizonData.prInnovation);
-    spacer(4);
-  }
-
-  if (horizonData.whatWeAreNot) {
-    subheading("What We Won't Do");
-    body(horizonData.whatWeAreNot);
-    spacer(4);
-  }
-
-  divider();
-
-  // Competitive Advantage
-  heading("COMPETITIVE ADVANTAGE", 14);
-  spacer(2);
-  const landscapeSummary = gauntletData.analysisResult?.landscapeSummary;
-  if (landscapeSummary) {
-    body(landscapeSummary);
-  } else {
-    body("Competitive analysis not yet completed.");
-  }
-
+  const productIdea = horizonData.prHook || horizonData.prInnovation || horizonData.whatWeAre || "Untitled Product Idea";
   const competitors = gauntletData.competitors || [];
-  const critical = competitors.filter(c => c.aiRiskRating === "critical" || c.aiRiskRating === "high");
-  if (critical.length > 0) {
-    spacer(3);
-    subheading(`Key Threats (${critical.length})`);
-    critical.forEach(c => {
-      body(`${c.name} (${c.category}) — AI Risk: ${c.aiRiskRating}. ${c.riskRationale || ""}`, 2);
-      spacer(1);
-    });
-  }
+  const landscapeSummary = gauntletData.analysisResult?.landscapeSummary;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGE 1 — COVER + VISUAL SUMMARY OF EVERYTHING
+  // ═══════════════════════════════════════════════════════════════════════════
+  y = 0;
+
+  // Top navy band with logo
+  doc.setFillColor(...NAVY_RGB);
+  doc.rect(0, 0, W, 36, "F");
+  drawJwxLogo(doc, M, 10, 16);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(255, 255, 255);
+  doc.text("Strategic Engine", M + 22, 18);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text("Executive Dossier", M + 22, 24);
+  doc.setFontSize(8);
+  doc.text(
+    new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+    W - M, 18, { align: "right" }
+  );
+
+  y = 46;
+
+  // Product idea title block
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(...RED_RGB);
+  doc.text("THE PRODUCT IDEA", M, y);
+  y += 5;
+
+  doc.setFontSize(16);
+  doc.setTextColor(...NAVY_RGB);
+  const ideaLines = doc.splitTextToSize(productIdea, CW);
+  doc.text(ideaLines, M, y);
+  y += ideaLines.length * 7 + 4;
 
   divider();
-
-  // Monetization Opportunity
-  heading("MONETIZATION OPPORTUNITY", 14);
   spacer(2);
-  if (monetizationData.valueMetric) {
-    subheading("Value Metric");
-    body(monetizationData.valueMetric);
-    spacer(2);
-  }
-  if (monetizationData.pricingPhilosophy) {
-    subheading("Pricing Philosophy");
-    body(monetizationData.pricingPhilosophy);
-    spacer(2);
-  }
-  const tiers = monetizationData.tiers || {};
-  Object.entries(tiers).forEach(([key, tier]) => {
-    if (tier.price || tier.segment) {
-      body(`${key.charAt(0).toUpperCase() + key.slice(1)}: ${tier.price || "TBD"} — ${tier.segment || "Segment TBD"}`, 2);
-    }
-  });
-  if (monetizationData.cac || monetizationData.ltv) {
-    spacer(2);
-    subheading("Unit Economics");
-    body(`CAC: ${monetizationData.cac || "TBD"} | LTV: ${monetizationData.ltv || "TBD"} | Ratio: ${monetizationData.ltvCacRatio || "TBD"}`);
-  }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PAGE 2: STRATEGIC FOUNDATION
-  // ═══════════════════════════════════════════════════════════════════════════
-  addPage();
-  heading("STRATEGIC FOUNDATION", 16);
-  divider();
+  // Visual summary — 2x3 tile grid
+  const tileW = (CW - 6) / 2;
+  const tileH = 38;
+  const tiles = [
+    {
+      title: "THE PROBLEM",
+      body: horizonData.problemSituation || horizonData.problemFailureMode || "Not defined",
+      color: "#fef2f2",
+      border: "#fecaca",
+      accent: "#dc2626",
+    },
+    {
+      title: "WHO PAYS",
+      body: horizonData.buyerPersonas || horizonData.currentSpend || "Not defined",
+      color: "#fffbeb",
+      border: "#fde68a",
+      accent: "#d97706",
+    },
+    {
+      title: "WHY JW PLAYER",
+      body: horizonData.capabilityAlignment || horizonData.structuralFit || "Not defined",
+      color: "#f0fdf4",
+      border: "#bbf7d0",
+      accent: "#16a34a",
+    },
+    {
+      title: "MONEY MOVEMENT",
+      body: horizonData.takeMechanism || horizonData.moneyPath || "Not defined",
+      color: "#eff6ff",
+      border: "#bfdbfe",
+      accent: "#2563eb",
+    },
+    {
+      title: "BOUNDARIES",
+      body: horizonData.whatWeAreNot || horizonData.strategicConstraints || "Not defined",
+      color: "#faf5ff",
+      border: "#ddd6fe",
+      accent: "#7c3aed",
+    },
+    {
+      title: "OPEN QUESTIONS",
+      body: horizonData.assumptions || horizonData.risks || "Not defined",
+      color: "#f8fafc",
+      border: "#e2e8f0",
+      accent: "#475569",
+    },
+  ];
 
-  // 0. Press Release
-  subheading("0. The Press Release");
-  if (horizonData.prHook) { body(`Hook: ${horizonData.prHook}`); spacer(1); }
-  if (horizonData.prStatusQuo) { body(`Status Quo: ${horizonData.prStatusQuo}`); spacer(1); }
-  if (horizonData.prInnovation) { body(`Innovation: ${horizonData.prInnovation}`); spacer(1); }
-  if (horizonData.prBeforeAfter) { body(`Before & After: ${horizonData.prBeforeAfter}`); spacer(1); }
-  if (horizonData.prValueProp) { body(`Value Prop: ${horizonData.prValueProp}`); spacer(1); }
-  spacer(3);
+  const hexToRgb = (hex) => {
+    const h = hex.replace("#", "");
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  };
 
-  // 1. The Problem
-  subheading("1. The Problem");
-  if (horizonData.problemSituation) { body(`Situation: ${horizonData.problemSituation}`); spacer(1); }
-  if (horizonData.problemVictim) { body(`Victim: ${horizonData.problemVictim}`); spacer(1); }
-  if (horizonData.problemFailureMode) { body(`Failure Mode: ${horizonData.problemFailureMode}`); spacer(1); }
-  if (horizonData.problemConsequence) { body(`Consequence: ${horizonData.problemConsequence}`); spacer(1); }
-  if (horizonData.problemCurrentSolutions) { body(`Why Current Solutions Fail: ${horizonData.problemCurrentSolutions}`); spacer(1); }
-  spacer(3);
-
-  // 2. Who Pays
-  subheading("2. Who Pays");
-  if (horizonData.buyerPersonas) { body(`Buyer: ${horizonData.buyerPersonas}`); spacer(1); }
-  if (horizonData.currentSpend) { body(`Current Spend: ${horizonData.currentSpend}`); spacer(1); }
-  if (horizonData.switchLogic) { body(`Switch Logic: ${horizonData.switchLogic}`); spacer(1); }
-  if (horizonData.realExample) { body(`Real Example: ${horizonData.realExample}`); spacer(1); }
-  if (horizonData.behaviorTest) { body(`Behavior Test: ${horizonData.behaviorTest}`); spacer(1); }
-  spacer(3);
-
-  // 3. Why JW Player
-  subheading("3. Why JW Player");
-  if (horizonData.marketExpectation) { body(`Market Expectation: ${horizonData.marketExpectation}`); spacer(1); }
-  if (horizonData.capabilityAlignment) { body(`Capability Alignment: ${horizonData.capabilityAlignment}`); spacer(1); }
-  if (horizonData.structuralFit) { body(`Structural Fit: ${horizonData.structuralFit}`); spacer(1); }
-  if (horizonData.credibilityTest) { body(`Credibility Test: ${horizonData.credibilityTest}`); spacer(1); }
-  if (horizonData.stretchRisk) { body(`Stretch/Risk: ${horizonData.stretchRisk}`); spacer(1); }
-  spacer(3);
-
-  // 4. Money Movement
-  subheading("4. The Money Movement");
-  if (horizonData.moneyToday) { body(`Where the Money Is Today: ${horizonData.moneyToday}`); spacer(1); }
-  if (horizonData.moneyOwners) { body(`Who Owns It: ${horizonData.moneyOwners}`); spacer(1); }
-  if (horizonData.takeMechanism) { body(`How We Take It: ${horizonData.takeMechanism}`); spacer(1); }
-  if (horizonData.moneyPath) { body(`Mechanism: ${horizonData.moneyPath}`); spacer(1); }
-  spacer(3);
-
-  // 5. Boundaries
-  subheading("5. Boundaries");
-  if (horizonData.whatWeAre) { body(`What We Are: ${horizonData.whatWeAre}`); spacer(1); }
-  if (horizonData.whatWeAreNot) { body(`What We Are Not: ${horizonData.whatWeAreNot}`); spacer(1); }
-  if (horizonData.competitiveBoundaries) { body(`Competitive Boundaries: ${horizonData.competitiveBoundaries}`); spacer(1); }
-  if (horizonData.strategicConstraints) { body(`Strategic Constraints: ${horizonData.strategicConstraints}`); spacer(1); }
-  spacer(3);
-
-  // 6. Open Questions
-  subheading("6. Open Questions / Weak Points");
-  if (horizonData.missingProof) { body(`Missing Proof: ${horizonData.missingProof}`); spacer(1); }
-  if (horizonData.assumptions) { body(`Assumptions: ${horizonData.assumptions}`); spacer(1); }
-  if (horizonData.risks) { body(`Risks: ${horizonData.risks}`); spacer(1); }
-  if (horizonData.unknowns) { body(`Unknowns: ${horizonData.unknowns}`); spacer(1); }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PAGE 3: COMPETITIVE LANDSCAPE
-  // ═══════════════════════════════════════════════════════════════════════════
-  addPage();
-  heading("COMPETITIVE LANDSCAPE", 16);
-  divider();
-
-  if (landscapeSummary) {
-    body(landscapeSummary);
-    spacer(6);
-  }
-
-  competitors.forEach((c, i) => {
-    checkPageSpace(25);
+  tiles.forEach((t, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const tx = M + col * (tileW + 6);
+    const ty = y + row * (tileH + 5);
+    // Background
+    doc.setFillColor(...hexToRgb(t.color));
+    doc.setDrawColor(...hexToRgb(t.border));
+    doc.setLineWidth(0.3);
+    doc.roundedRect(tx, ty, tileW, tileH, 2, 2, "FD");
+    // Accent bar
+    doc.setFillColor(...hexToRgb(t.accent));
+    doc.rect(tx, ty, 1.5, tileH, "F");
+    // Title
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.setTextColor(...NAVY_RGB);
-    doc.text(`${i + 1}. ${c.name}`, M, y);
+    doc.setFontSize(7.5);
+    doc.setTextColor(...hexToRgb(t.accent));
+    doc.text(t.title, tx + 4, ty + 5);
+    // Body (truncated)
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
-    doc.setTextColor(...LIGHT_GRAY_RGB);
-    doc.text(`${c.category} | AI Risk: ${c.aiRiskRating}${gauntletData.pmRatings?.[c.name] ? ` | PM Risk: ${gauntletData.pmRatings[c.name]}` : ""}`, M + 50, y);
-    y += 5;
-    body(c.description || "", 4);
-    if (c.riskRationale) body(`Risk rationale: ${c.riskRationale}`, 4);
-    spacer(3);
+    doc.setTextColor(...NAVY_RGB);
+    const bodyLines = doc.splitTextToSize(t.body, tileW - 7).slice(0, 5);
+    doc.text(bodyLines, tx + 4, ty + 10);
   });
+  y += 3 * (tileH + 5) + 4;
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PAGE 4: INTERROGATION RESULTS
-  // ═══════════════════════════════════════════════════════════════════════════
-  addPage();
-  heading("CHALLENGER INTERROGATION RESULTS", 16);
-  divider();
-
+  // Snapshot stats row (competitors, avg AI score, unit econ)
   const interrogationCategories = [
     { id: "moat", label: "Competitive Moat" },
     { id: "market", label: "Market Reality" },
@@ -583,48 +587,231 @@ const generateDossier = (horizonData, gauntletData, monetizationData) => {
     { id: "economics", label: "Unit Economics" },
     { id: "strategy", label: "Strategic Leverage" },
   ];
-
   const aiScores = gauntletData.interrogationScores || {};
+  const allAiScores = Object.values(aiScores);
+  const aiScoreAvg = allAiScores.length > 0
+    ? (allAiScores.reduce((a, b) => a + b, 0) / allAiScores.length).toFixed(1)
+    : "—";
+
+  ensureSpace(30);
+  const statW = (CW - 12) / 3;
+  const stats = [
+    { label: "Competitors Mapped", value: String(competitors.length || 0) },
+    { label: "Avg AI Defense Score", value: `${aiScoreAvg}/5` },
+    { label: "LTV:CAC Target", value: monetizationData.ltvCacRatio || "—" },
+  ];
+  stats.forEach((s, i) => {
+    const sx = M + i * (statW + 6);
+    doc.setFillColor(...NAVY_RGB);
+    doc.roundedRect(sx, y, statW, 22, 2, 2, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(255, 255, 255);
+    doc.text(s.value, sx + statW / 2, y + 11, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(220, 220, 230);
+    doc.text(s.label, sx + statW / 2, y + 17, { align: "center" });
+  });
+  y += 26;
+
+  // Executive summary paragraph
+  ensureSpace(30);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(...RED_RGB);
+  doc.text("AT A GLANCE", M, y);
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...GRAY_RGB);
+  const execLine = [
+    horizonData.prHook ? `Hook: ${horizonData.prHook}` : null,
+    competitors.length > 0 ? `Landscape: ${competitors.length} competitors mapped.` : null,
+    monetizationData.valueMetric ? `Value metric: ${monetizationData.valueMetric}.` : null,
+  ].filter(Boolean).join(" ");
+  if (execLine) {
+    const execLines = doc.splitTextToSize(execLine, CW);
+    doc.text(execLines, M, y);
+    y += execLines.length * 4.5;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SECTION: STRATEGY DOC (7-section Working Backwards)
+  // ═══════════════════════════════════════════════════════════════════════════
+  sectionCoverPage(1, "The Strategy", "Working-Backwards product strategy in seven sections.");
+
+  const strategySections = [
+    {
+      title: "0. The Press Release",
+      fields: [
+        ["Hook", horizonData.prHook],
+        ["Status Quo", horizonData.prStatusQuo],
+        ["Innovation", horizonData.prInnovation],
+        ["Before & After", horizonData.prBeforeAfter],
+        ["Value Prop", horizonData.prValueProp],
+      ],
+    },
+    {
+      title: "1. The Problem",
+      fields: [
+        ["Situation", horizonData.problemSituation],
+        ["Victim", horizonData.problemVictim],
+        ["Failure Mode", horizonData.problemFailureMode],
+        ["Consequence", horizonData.problemConsequence],
+        ["Why Current Solutions Fail", horizonData.problemCurrentSolutions],
+      ],
+    },
+    {
+      title: "2. Who Pays",
+      fields: [
+        ["Buyer Personas", horizonData.buyerPersonas],
+        ["Current Spend", horizonData.currentSpend],
+        ["Switch Logic", horizonData.switchLogic],
+        ["Real Example", horizonData.realExample],
+        ["Behavior Test", horizonData.behaviorTest],
+      ],
+    },
+    {
+      title: "3. Why JW Player Should Do This",
+      fields: [
+        ["Market Expectation", horizonData.marketExpectation],
+        ["Capability Alignment", horizonData.capabilityAlignment],
+        ["Structural Fit", horizonData.structuralFit],
+        ["Credibility Test", horizonData.credibilityTest],
+        ["Stretch / Risk", horizonData.stretchRisk],
+      ],
+    },
+    {
+      title: "4. The Money Movement",
+      fields: [
+        ["Where the Money Is Today", horizonData.moneyToday],
+        ["Who Currently Owns It", horizonData.moneyOwners],
+        ["How We Take It", horizonData.takeMechanism],
+        ["Mechanism", horizonData.moneyPath],
+      ],
+    },
+    {
+      title: "5. Boundaries",
+      fields: [
+        ["What We Are", horizonData.whatWeAre],
+        ["What We Are Not", horizonData.whatWeAreNot],
+        ["Competitive Boundaries", horizonData.competitiveBoundaries],
+        ["Strategic Constraints", horizonData.strategicConstraints],
+      ],
+    },
+    {
+      title: "6. Open Questions / Weak Points",
+      fields: [
+        ["Missing Proof", horizonData.missingProof],
+        ["Assumptions", horizonData.assumptions],
+        ["Risks", horizonData.risks],
+        ["Unknowns", horizonData.unknowns],
+      ],
+    },
+  ];
+
+  strategySections.forEach((section) => {
+    ensureSpace(30);
+    subheading(section.title);
+    spacer(1);
+    section.fields.forEach(([l, v]) => fieldBlock(l, v));
+    spacer(3);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SECTION: COMPETITIVE LANDSCAPE
+  // ═══════════════════════════════════════════════════════════════════════════
+  sectionCoverPage(2, "Competitive Landscape", "AI-generated competitive analysis across direct, indirect, emerging, and adjacent players.");
+
+  if (landscapeSummary) {
+    label("Landscape Summary");
+    body(landscapeSummary);
+    spacer(3);
+  }
+
+  if (competitors.length > 0) {
+    subheading(`Competitors (${competitors.length})`);
+    spacer(1);
+    competitors.forEach((c, i) => {
+      ensureSpace(22);
+      // Name + category header
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(...NAVY_RGB);
+      doc.text(`${i + 1}. ${c.name}`, M, y);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...LIGHT_GRAY_RGB);
+      const meta = `${c.category || "—"} · AI Risk: ${c.aiRiskRating || "—"}${gauntletData.pmRatings?.[c.name] ? ` · PM Risk: ${gauntletData.pmRatings[c.name]}` : ""}`;
+      doc.text(meta, M + 60, y);
+      y += 5;
+      if (c.description) body(c.description, 4);
+      if (c.threat) body(`Threat: ${c.threat}`, 4);
+      if (c.riskRationale) body(`Risk rationale: ${c.riskRationale}`, 4);
+      spacer(2);
+    });
+  }
+
+  if (gauntletData.analysisResult?.marketDynamics) {
+    ensureSpace(20);
+    subheading("Market Dynamics");
+    const md = gauntletData.analysisResult.marketDynamics;
+    fieldBlock("Consolidation Trend", md.consolidationTrend);
+    fieldBlock("Emerging Threats", md.emergingThreats);
+    fieldBlock("Regulatory Factors", md.regulatoryFactors);
+    fieldBlock("Switching Costs", md.switchingCosts);
+  }
+
+  if (Array.isArray(gauntletData.analysisResult?.strategicRecommendations) && gauntletData.analysisResult.strategicRecommendations.length > 0) {
+    ensureSpace(20);
+    subheading("Strategic Recommendations");
+    gauntletData.analysisResult.strategicRecommendations.forEach((r, i) => body(`${i + 1}. ${r}`, 2));
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SECTION: INTERROGATION
+  // ═══════════════════════════════════════════════════════════════════════════
+  sectionCoverPage(3, "Challenger Interrogation", "AI-powered steel-man interrogation results across six categories.");
+
   const pmSelfScores = gauntletData.pmScores || {};
   const responses = gauntletData.interrogationResponses || {};
   const evals = gauntletData.evaluations || {};
   const followUps = gauntletData.followUpResponses || {};
 
-  // Score summary table
   subheading("Score Summary (AI vs PM Self-Assessment)");
-  spacer(2);
-  interrogationCategories.forEach(cat => {
-    const aiCatScores = Object.entries(aiScores).filter(([k]) => k.startsWith(cat.id)).map(([,v]) => v);
-    const pmCatScores = Object.entries(pmSelfScores).filter(([k]) => k.startsWith(cat.id)).map(([,v]) => v);
-    const aiAvg = aiCatScores.length > 0 ? (aiCatScores.reduce((a,b) => a+b, 0) / aiCatScores.length).toFixed(1) : "—";
-    const pmAvg = pmCatScores.length > 0 ? (pmCatScores.reduce((a,b) => a+b, 0) / pmCatScores.length).toFixed(1) : "—";
-    body(`${cat.label}: AI ${aiAvg}/5 | PM ${pmAvg}/5`, 2);
+  spacer(1);
+  interrogationCategories.forEach((cat) => {
+    const aiCat = Object.entries(aiScores).filter(([k]) => k.startsWith(cat.id)).map(([, v]) => v);
+    const pmCat = Object.entries(pmSelfScores).filter(([k]) => k.startsWith(cat.id)).map(([, v]) => v);
+    const aiAvg = aiCat.length > 0 ? (aiCat.reduce((a, b) => a + b, 0) / aiCat.length).toFixed(1) : "—";
+    const pmAvg = pmCat.length > 0 ? (pmCat.reduce((a, b) => a + b, 0) / pmCat.length).toFixed(1) : "—";
+    body(`${cat.label}: AI ${aiAvg}/5  |  PM ${pmAvg}/5`, 2);
   });
+  spacer(4);
 
-  spacer(6);
-
-  // Detailed Q&A
   subheading("Detailed Responses");
-  spacer(2);
+  spacer(1);
   const challengerQs = gauntletData.analysisResult?.challengerQuestions || {};
-
-  interrogationCategories.forEach(cat => {
+  interrogationCategories.forEach((cat) => {
     const questions = challengerQs[cat.id] || [];
     questions.forEach((q, qi) => {
-      checkPageSpace(35);
+      ensureSpace(25);
       const key = `${cat.id}_${qi}`;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.setTextColor(...NAVY_RGB);
       const qLines = doc.splitTextToSize(`Q: ${q.question}`, CW - 4);
-      doc.text(qLines, M + 2, y);
-      y += qLines.length * 4 + 2;
-
-      if (responses[key]) {
-        body(`A: ${responses[key]}`, 4);
-      }
+      qLines.forEach((line) => {
+        ensureSpace(5);
+        doc.text(line, M + 2, y);
+        y += 4;
+      });
+      y += 1;
+      if (responses[key]) body(`A: ${responses[key]}`, 4);
       const ev = evals[key];
       if (ev) {
+        ensureSpace(5);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(8);
         doc.setTextColor(...RED_RGB);
@@ -632,62 +819,72 @@ const generateDossier = (horizonData, gauntletData, monetizationData) => {
         y += 4;
         if (ev.assessment) body(`Assessment: ${ev.assessment}`, 4);
       }
-      if (followUps[key]) {
-        body(`Follow-up response: ${followUps[key]}`, 4);
-      }
-      spacer(4);
+      if (followUps[key]) body(`Follow-up response: ${followUps[key]}`, 4);
+      spacer(3);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PAGE 5: MONETIZATION DETAIL
+  // SECTION: MONETIZATION
   // ═══════════════════════════════════════════════════════════════════════════
-  addPage();
-  heading("MONETIZATION STRATEGY", 16);
-  divider();
+  sectionCoverPage(4, "Monetization", "AI market read, value metric, pricing philosophy, and unit economics.");
+
+  const ma = monetizationData.marketAnalysis;
+  if (ma) {
+    subheading("AI Market Analysis");
+    if (ma.marketSummary) { label("Market Summary"); body(ma.marketSummary); }
+    if (Array.isArray(ma.competitorBenchmarks) && ma.competitorBenchmarks.length > 0) {
+      label("Peer Pricing Benchmarks");
+      ma.competitorBenchmarks.forEach((b) => {
+        body(`${b.name} — ${b.pricingModel || "—"}${b.priceRange ? ` · ${b.priceRange}` : ""}${b.notes ? `. ${b.notes}` : ""}`, 2);
+      });
+    }
+    if (ma.recommendedPriceRange) {
+      label("Reasonable Price Range");
+      body(ma.recommendedPriceRange);
+      if (ma.priceRangeRationale) body(ma.priceRangeRationale, 2, 8.5);
+    }
+    if (Array.isArray(ma.pricingObservations) && ma.pricingObservations.length > 0) {
+      label("Pricing Observations");
+      ma.pricingObservations.forEach((obs) => body(`• ${obs}`, 2));
+    }
+    spacer(3);
+  }
 
   if (monetizationData.valueMetric) {
     subheading("Value Metric");
     body(monetizationData.valueMetric);
-    spacer(4);
+    spacer(2);
   }
   if (monetizationData.pricingPhilosophy) {
     subheading("Pricing Philosophy");
     body(monetizationData.pricingPhilosophy);
-    spacer(4);
+    spacer(2);
   }
 
-  ["entry", "growth", "enterprise"].forEach(tierKey => {
-    const tier = tiers[tierKey];
-    if (!tier) return;
-    checkPageSpace(30);
-    subheading(`${tierKey.charAt(0).toUpperCase() + tierKey.slice(1)} Tier`);
-    if (tier.price) body(`Price: ${tier.price}`, 2);
-    if (tier.segment) body(`Segment: ${tier.segment}`, 2);
-    if (tier.capabilities) body(`Capabilities: ${tier.capabilities}`, 2);
-    if (tier.upgradeTrigger) body(`Upgrade trigger: ${tier.upgradeTrigger}`, 2);
-    if (tier.marginDefense) body(`Margin defense: ${tier.marginDefense}`, 2);
-    spacer(4);
-  });
-
-  if (monetizationData.cac || monetizationData.ltv || monetizationData.paybackPeriod) {
+  if (monetizationData.cac || monetizationData.ltv || monetizationData.ltvCacRatio || monetizationData.paybackPeriod) {
     subheading("Unit Economics");
-    body(`CAC: ${monetizationData.cac || "TBD"} | LTV: ${monetizationData.ltv || "TBD"} | Ratio: ${monetizationData.ltvCacRatio || "TBD"}`);
-    if (monetizationData.paybackPeriod) body(`Payback: ${monetizationData.paybackPeriod}`, 2);
+    fieldBlock("Target CAC", monetizationData.cac);
+    fieldBlock("Target LTV", monetizationData.ltv);
+    fieldBlock("LTV:CAC Ratio", monetizationData.ltvCacRatio);
+    fieldBlock("Payback Period", monetizationData.paybackPeriod);
   }
 
-  // Footer on every page
+  // ── Footer on every page ──
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
+    // Mini logo footer-left
+    drawJwxLogo(doc, M, 285, 5);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
     doc.setTextColor(...LIGHT_GRAY_RGB);
-    doc.text("JWX Strategic Engine — Confidential", M, 290);
-    doc.text(`Page ${i} of ${pageCount}`, W - M, 290, { align: "right" });
+    doc.text("Strategic Engine — Confidential", M + 7, 289);
+    doc.text(`Page ${i} of ${pageCount}`, W - M, 289, { align: "right" });
   }
 
-  doc.save("JWX-Strategic-Dossier.pdf");
+  const safeName = sanitizeFilename(productIdea);
+  doc.save(`${safeName}.pdf`);
 };
 
 // ─── FEASIBILITY PAYLOAD BUILDER ───────────────────────────────────────────
@@ -799,7 +996,7 @@ const buildFeasibilityPayload = (horizonData, gauntletData, monetizationData) =>
     monetization: {
       valueMetric: monetizationData.valueMetric,
       pricingPhilosophy: monetizationData.pricingPhilosophy,
-      tiers: monetizationData.tiers,
+      marketAnalysis: monetizationData.marketAnalysis || null,
       unitEconomics: {
         cac: monetizationData.cac,
         ltv: monetizationData.ltv,
@@ -1630,6 +1827,10 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
     const totalAnswered = Object.keys(responses).filter((k) => responses[k]).length;
     const totalQuestions = INTERROGATION_CATEGORIES.length * 2;
     const catAnswered = Object.keys(responses).filter((k) => k.startsWith(cat.id) && responses[k]).length;
+    const sectionsWithAnswer = INTERROGATION_CATEGORIES.filter(c =>
+      Object.keys(responses).some(k => k.startsWith(c.id) && responses[k]?.trim())
+    ).length;
+    const canProceed = sectionsWithAnswer >= INTERROGATION_CATEGORIES.length;
 
     return (
       <div className="space-y-6">
@@ -1642,18 +1843,17 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
             <div>
               <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>Steel Man Interrogation</h3>
               <p className="text-xs" style={{ color: BRAND.textMuted }}>
-                {totalAnswered}/{totalQuestions} challenges answered
+                {sectionsWithAnswer}/{INTERROGATION_CATEGORIES.length} sections answered · answer one per section to continue
               </p>
             </div>
           </div>
-          <Badge variant="danger">HOSTILE</Badge>
         </div>
 
         {/* Progress Bar */}
         <div className="h-2 rounded-full" style={{ backgroundColor: BRAND.midGray }}>
           <div
             className="h-2 rounded-full transition-all duration-500"
-            style={{ width: `${(totalAnswered / totalQuestions) * 100}%`, backgroundColor: BRAND.red }}
+            style={{ width: `${(sectionsWithAnswer / INTERROGATION_CATEGORIES.length) * 100}%`, backgroundColor: BRAND.red }}
           />
         </div>
 
@@ -1901,8 +2101,8 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
                 )}
               </div>
 
-              {/* AI Follow-Up Question */}
-              {evaluations[responseKey].followUp && (
+              {/* AI Follow-Up Question — only shown when score < 4 */}
+              {evaluations[responseKey].followUp && evaluations[responseKey].score < 4 && (
                 <div className="rounded-xl border-2 p-4 space-y-3" style={{ borderColor: BRAND.red, backgroundColor: `${BRAND.red}03` }}>
                   <div className="flex items-center gap-2">
                     <Flame size={14} style={{ color: BRAND.red }} />
@@ -1962,7 +2162,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
         </SectionCard>
 
         {/* Vulnerability Report */}
-        {totalAnswered >= totalQuestions && (
+        {canProceed && (
           <SectionCard>
             <h4 className="text-sm font-bold flex items-center gap-2 mb-4" style={{ color: BRAND.navy }}>
               <AlertTriangle size={16} style={{ color: "#d97706" }} /> Vulnerability Assessment
@@ -2048,9 +2248,11 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
 
 // ─── MODULE 3: MONETIZATION ─────────────────────────────────────────────────
 const MonetizationModule = ({ data, setData, gauntletData, horizonData }) => {
-  const [activeTier, setActiveTier] = useState("growth");
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketError, setMarketError] = useState(null);
 
   const competitorNames = (gauntletData.competitors || []).map((c) => c.name).filter(Boolean);
+  const marketAnalysis = data.marketAnalysis || null;
 
   const weakAreas = useMemo(() => {
     const scores = gauntletData.interrogationScores || {};
@@ -2065,6 +2267,28 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData }) => {
       .filter((c) => c.avg < 3.5)
       .sort((a, b) => a.avg - b.avg);
   }, [gauntletData]);
+
+  const runMarketAnalysis = async () => {
+    setMarketLoading(true);
+    setMarketError(null);
+    try {
+      const result = await callMonetizationAnalysisAPI({
+        horizonData,
+        competitiveAnalysis: gauntletData.analysisResult || {},
+      });
+      setData({ ...data, marketAnalysis: result });
+    } catch (err) {
+      setMarketError(err.message || "Failed to analyze the market");
+    } finally {
+      setMarketLoading(false);
+    }
+  };
+
+  const applyValueMetricSuggestion = () => {
+    if (marketAnalysis?.valueMetricSuggestion) {
+      setData({ ...data, valueMetric: marketAnalysis.valueMetricSuggestion });
+    }
+  };
 
   const scrollToPublish = () => {
     const el = document.getElementById("publish-section");
@@ -2137,111 +2361,165 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData }) => {
         )}
       </SectionCard>
 
-      {/* Pricing Strategy */}
+      {/* ═══ AI MARKET ANALYSIS ═══ */}
       <SectionCard>
-        <div className="space-y-4">
-          <TextArea
-            label="Value Metric (What You Charge For)"
-            value={data.valueMetric}
-            onChange={(v) => setData({ ...data, valueMetric: v })}
-            placeholder="The unit that scales with customer success. Not 'seats' unless value scales with headcount. (e.g., 'video minutes delivered', 'API calls', 'GB encoded')"
-            rows={2}
-            hint="The best value metrics correlate directly with the customer outcome your product enables."
-          />
-          <TextArea
-            label="Pricing Philosophy"
-            value={data.pricingPhilosophy}
-            onChange={(v) => setData({ ...data, pricingPhilosophy: v })}
-            placeholder="Value-based, cost-plus, or competitive? Why? How does this pricing create a moat — not just revenue?"
-            rows={2}
-          />
+        <div className="flex items-start justify-between mb-4 gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: "#f5f3ff" }}>
+              <Brain size={20} style={{ color: "#7c3aed" }} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>AI Market Read</h3>
+              <p className="text-xs" style={{ color: BRAND.textMuted }}>
+                Gemini reviews your competitive landscape and proposes a value metric + pricing observations.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={runMarketAnalysis}
+            disabled={marketLoading}
+            className="rounded-xl px-4 py-2 text-xs font-bold text-white flex items-center gap-2 whitespace-nowrap disabled:opacity-60"
+            style={{ backgroundColor: "#7c3aed" }}
+          >
+            {marketLoading ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Analyzing...
+              </>
+            ) : marketAnalysis ? (
+              <>
+                <RefreshCw size={14} /> Re-run Analysis
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} /> Run Market Analysis
+              </>
+            )}
+          </button>
         </div>
+
+        {marketError && (
+          <div className="rounded-xl border-2 p-3 mb-3 flex items-start gap-2" style={{ borderColor: "#fecaca", backgroundColor: "#fef2f2" }}>
+            <AlertTriangle size={14} style={{ color: "#dc2626" }} className="mt-0.5 shrink-0" />
+            <p className="text-xs" style={{ color: "#991b1b" }}>{marketError}</p>
+          </div>
+        )}
+
+        {!marketAnalysis && !marketLoading && (
+          <p className="text-xs italic" style={{ color: BRAND.textMuted }}>
+            No market analysis yet. Run it to see how peers price comparable products and what value metric is most defensible for your idea.
+          </p>
+        )}
+
+        {marketAnalysis && (
+          <div className="space-y-4">
+            {marketAnalysis.marketSummary && (
+              <div className="rounded-xl p-4" style={{ backgroundColor: "#faf5ff", border: "1px solid #ddd6fe" }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: "#7c3aed" }}>Market Summary</p>
+                <p className="text-sm leading-relaxed" style={{ color: BRAND.textSecondary }}>{marketAnalysis.marketSummary}</p>
+              </div>
+            )}
+
+            {Array.isArray(marketAnalysis.competitorBenchmarks) && marketAnalysis.competitorBenchmarks.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: BRAND.textMuted }}>How Peers Price</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {marketAnalysis.competitorBenchmarks.map((b, i) => (
+                    <div key={i} className="rounded-lg p-3" style={{ backgroundColor: BRAND.lightGray }}>
+                      <p className="text-xs font-bold" style={{ color: BRAND.navy }}>{b.name}</p>
+                      <p className="text-[11px] mt-0.5" style={{ color: BRAND.textSecondary }}>
+                        <span className="font-semibold">Model:</span> {b.pricingModel}
+                      </p>
+                      {b.priceRange && (
+                        <p className="text-[11px]" style={{ color: BRAND.textSecondary }}>
+                          <span className="font-semibold">Range:</span> {b.priceRange}
+                        </p>
+                      )}
+                      {b.notes && <p className="text-[11px] italic mt-1" style={{ color: BRAND.textMuted }}>{b.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {marketAnalysis.recommendedPriceRange && (
+              <div className="rounded-xl p-4" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#16a34a" }}>Reasonable Price Range</p>
+                <p className="text-sm font-semibold" style={{ color: BRAND.navy }}>{marketAnalysis.recommendedPriceRange}</p>
+                {marketAnalysis.priceRangeRationale && (
+                  <p className="text-xs mt-1" style={{ color: BRAND.textSecondary }}>{marketAnalysis.priceRangeRationale}</p>
+                )}
+              </div>
+            )}
+
+            {Array.isArray(marketAnalysis.pricingObservations) && marketAnalysis.pricingObservations.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: BRAND.textMuted }}>Pricing Observations</p>
+                <ul className="space-y-1">
+                  {marketAnalysis.pricingObservations.map((obs, i) => (
+                    <li key={i} className="text-xs flex items-start gap-2" style={{ color: BRAND.textSecondary }}>
+                      <span style={{ color: BRAND.red }}>•</span> {obs}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </SectionCard>
 
-      {/* Tier Selector */}
-      <div className="flex gap-3">
-        {Object.entries(PRICING_TEMPLATES).map(([key, tier]) => (
-          <button
-            key={key}
-            onClick={() => setActiveTier(key)}
-            className="flex-1 rounded-2xl border-2 p-4 transition-all"
-            style={{
-              borderColor: activeTier === key ? BRAND.red : BRAND.midGray,
-              backgroundColor: activeTier === key ? `${BRAND.red}05` : "white",
-            }}
-          >
-            <p className="text-sm font-bold" style={{ color: activeTier === key ? BRAND.red : BRAND.navy }}>
-              {tier.name}
-            </p>
-            <p className="text-xs mt-0.5" style={{ color: BRAND.textMuted }}>{tier.subtitle}</p>
-          </button>
-        ))}
-      </div>
-
-      {/* Active Tier Configuration */}
+      {/* ═══ VALUE METRIC (recommended but editable) ═══ */}
       <SectionCard>
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>{PRICING_TEMPLATES[activeTier].name} Tier</h3>
-            <p className="text-sm" style={{ color: BRAND.textSecondary }}>{PRICING_TEMPLATES[activeTier].subtitle}</p>
-          </div>
-          <Badge>
-            {activeTier === "entry" ? "Land" : activeTier === "growth" ? "Expand" : "Lock-in"}
-          </Badge>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-semibold" style={{ color: BRAND.navy }}>
+            Value Metric (What You Charge For)
+          </label>
+          {marketAnalysis?.valueMetricSuggestion && (
+            <button
+              onClick={applyValueMetricSuggestion}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold"
+              style={{ backgroundColor: "#f5f3ff", color: "#7c3aed", border: "1px solid #ddd6fe" }}
+              title="Use the AI-recommended value metric"
+            >
+              <Sparkles size={12} />
+              Use AI suggestion
+            </button>
+          )}
         </div>
 
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <InputField
-              label="Price Point"
-              value={data.tiers?.[activeTier]?.price || ""}
-              onChange={(v) => {
-                const newTiers = { ...(data.tiers || {}), [activeTier]: { ...(data.tiers?.[activeTier] || {}), price: v } };
-                setData({ ...data, tiers: newTiers });
-              }}
-              placeholder={activeTier === "entry" ? "$0-99/mo" : activeTier === "growth" ? "$299-999/mo" : "Custom / $2,000+/mo"}
-            />
-            <InputField
-              label="Target Segment"
-              value={data.tiers?.[activeTier]?.segment || ""}
-              onChange={(v) => {
-                const newTiers = { ...(data.tiers || {}), [activeTier]: { ...(data.tiers?.[activeTier] || {}), segment: v } };
-                setData({ ...data, tiers: newTiers });
-              }}
-              placeholder="Who is this tier designed for?"
-            />
+        {marketAnalysis?.valueMetricSuggestion && (
+          <div className="rounded-xl p-3 mb-3" style={{ backgroundColor: "#faf5ff", border: "1px solid #ddd6fe" }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#7c3aed" }}>AI Recommendation</p>
+            <p className="text-sm font-semibold" style={{ color: BRAND.navy }}>{marketAnalysis.valueMetricSuggestion}</p>
+            {marketAnalysis.valueMetricRationale && (
+              <p className="text-xs mt-1" style={{ color: BRAND.textSecondary }}>{marketAnalysis.valueMetricRationale}</p>
+            )}
           </div>
-          <TextArea
-            label="Included Capabilities"
-            value={data.tiers?.[activeTier]?.capabilities || ""}
-            onChange={(v) => {
-              const newTiers = { ...(data.tiers || {}), [activeTier]: { ...(data.tiers?.[activeTier] || {}), capabilities: v } };
-              setData({ ...data, tiers: newTiers });
-            }}
-            placeholder="What's included? Be specific about limits — usage caps, feature gates, SLA levels."
-            rows={3}
-          />
-          <TextArea
-            label="Upgrade Trigger"
-            value={data.tiers?.[activeTier]?.upgradeTrigger || ""}
-            onChange={(v) => {
-              const newTiers = { ...(data.tiers || {}), [activeTier]: { ...(data.tiers?.[activeTier] || {}), upgradeTrigger: v } };
-              setData({ ...data, tiers: newTiers });
-            }}
-            placeholder="What usage pattern or business event pushes them to the next tier?"
-            rows={2}
-          />
-          <TextArea
-            label="Margin Defense"
-            value={data.tiers?.[activeTier]?.marginDefense || ""}
-            onChange={(v) => {
-              const newTiers = { ...(data.tiers || {}), [activeTier]: { ...(data.tiers?.[activeTier] || {}), marginDefense: v } };
-              setData({ ...data, tiers: newTiers });
-            }}
-            placeholder="Why can you sustain this margin? What cost advantages protect you from price compression?"
-            rows={2}
-          />
-        </div>
+        )}
+
+        <textarea
+          value={data.valueMetric || ""}
+          onChange={(e) => setData({ ...data, valueMetric: e.target.value })}
+          placeholder="The unit that scales with customer success (e.g., 'video minutes delivered', 'API calls', 'GB encoded')."
+          rows={2}
+          className="w-full rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none focus:ring-0"
+          style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
+          onFocus={(e) => e.target.style.borderColor = BRAND.red}
+          onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
+        />
+        <p className="text-xs mt-1" style={{ color: BRAND.textMuted }}>
+          The best value metrics correlate directly with the customer outcome your product enables.
+        </p>
+      </SectionCard>
+
+      {/* ═══ PRICING PHILOSOPHY (free text) ═══ */}
+      <SectionCard>
+        <TextArea
+          label="Pricing Philosophy"
+          value={data.pricingPhilosophy}
+          onChange={(v) => setData({ ...data, pricingPhilosophy: v })}
+          placeholder="How should this be priced and why? What's the thesis — value-based, penetration, premium, displacement? How does this pricing create a moat?"
+          rows={4}
+        />
       </SectionCard>
 
       {/* Unit Economics */}
@@ -2464,7 +2742,8 @@ export default function App() {
   });
   const [monetizationData, setMonetizationData] = useState(saved?.monetizationData ?? {
     valueMetric: "", pricingPhilosophy: "",
-    tiers: {}, cac: "", ltv: "", ltvCacRatio: "", paybackPeriod: "",
+    marketAnalysis: null,
+    cac: "", ltv: "", ltvCacRatio: "", paybackPeriod: "",
   });
 
   // Auto-save all state on every change
@@ -2498,13 +2777,6 @@ export default function App() {
             <div>
               <h1 className="text-sm font-bold tracking-tight" style={{ color: BRAND.navy }}>Strategic Engine</h1>
               <p className="text-[11px]" style={{ color: BRAND.textMuted }}>Strategy-First Product Architecture</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Badge variant="danger">CHALLENGER MODE</Badge>
-            <div className="flex items-center gap-1.5">
-              <Flame size={16} style={{ color: BRAND.red }} className="animate-pulse" />
-              <span className="text-xs font-bold" style={{ color: BRAND.red }}>Always On</span>
             </div>
           </div>
         </div>
@@ -2563,25 +2835,6 @@ export default function App() {
             );
           })}
         </div>
-
-        {/* Challenger Mode Banner */}
-        {activeModule === 1 && (
-          <div
-            className="mb-6 rounded-2xl border-2 p-4 flex items-center gap-4"
-            style={{ borderColor: `${BRAND.red}30`, backgroundColor: `${BRAND.red}03` }}
-          >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: `${BRAND.red}10` }}>
-              <Flame size={24} style={{ color: BRAND.red }} className="animate-pulse" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold" style={{ color: BRAND.red }}>CHALLENGER MODE ACTIVE</p>
-              <p className="text-xs" style={{ color: BRAND.textSecondary }}>
-                The system acts as your smartest competitor's strategist. Expect hostility — it's by design.
-              </p>
-            </div>
-            <Badge variant="danger">HOSTILE</Badge>
-          </div>
-        )}
 
         {/* Module Content */}
         {activeModule === 0 && (
