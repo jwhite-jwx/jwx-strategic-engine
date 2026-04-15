@@ -81,6 +81,141 @@ const TextArea = ({ label, value, onChange, placeholder, rows = 3, hint }) => (
   </div>
 );
 
+// ─── ENHANCED TEXTAREA WITH AI "HELP ME MAKE THIS BETTER" ───────────────────
+const EnhancedTextArea = ({ label, value, onChange, placeholder, rows = 3, hint, fieldHint, buildContext }) => {
+  const [status, setStatus] = useState("idle"); // idle | loading | suggesting | error
+  const [suggestion, setSuggestion] = useState(null);
+  const [rationale, setRationale] = useState("");
+  const [error, setError] = useState(null);
+
+  const handleEnhance = async () => {
+    if (!value || !value.trim()) {
+      setError("Write a draft first — the AI edits your words, it doesn't invent them.");
+      setStatus("error");
+      return;
+    }
+    setStatus("loading");
+    setError(null);
+    try {
+      const fullContext = typeof buildContext === "function" ? buildContext() : (buildContext || "");
+      const result = await callEnhanceAPI({
+        fieldLabel: label,
+        fieldHint: fieldHint || hint || "",
+        draft: value,
+        fullContext,
+      });
+      setSuggestion(result.enhanced);
+      setRationale(result.rationale || "");
+      setStatus("suggesting");
+    } catch (err) {
+      setError(err.message || "Failed to enhance");
+      setStatus("error");
+    }
+  };
+
+  const acceptSuggestion = () => {
+    onChange(suggestion);
+    setStatus("idle");
+    setSuggestion(null);
+  };
+
+  const rejectSuggestion = () => {
+    setStatus("idle");
+    setSuggestion(null);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <label className="block text-sm font-semibold" style={{ color: BRAND.navy }}>{label}</label>
+        <button
+          onClick={handleEnhance}
+          disabled={status === "loading"}
+          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all disabled:opacity-50"
+          style={{ backgroundColor: "#f5f3ff", color: "#7c3aed", border: "1px solid #ddd6fe" }}
+          title="Let the AI sharpen this draft"
+        >
+          {status === "loading" ? (
+            <>
+              <Loader2 size={12} className="animate-spin" />
+              Thinking...
+            </>
+          ) : (
+            <>
+              <Sparkles size={12} />
+              Help me make this better
+            </>
+          )}
+        </button>
+      </div>
+      <textarea
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        className="w-full rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none focus:ring-0"
+        style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
+        onFocus={(e) => e.target.style.borderColor = BRAND.red}
+        onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
+      />
+      {hint && <p className="text-xs" style={{ color: BRAND.textMuted }}>{hint}</p>}
+
+      {/* AI Suggestion Panel */}
+      {status === "suggesting" && suggestion && (
+        <div className="mt-3 rounded-xl p-4 space-y-3" style={{ backgroundColor: "#faf5ff", border: "2px solid #ddd6fe" }}>
+          <div className="flex items-center gap-2">
+            <Sparkles size={14} style={{ color: "#7c3aed" }} />
+            <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#7c3aed" }}>AI Suggested Edit</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-lg p-3" style={{ backgroundColor: "white", border: `1px solid ${BRAND.midGray}` }}>
+              <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: BRAND.textMuted }}>Your Version</p>
+              <p className="text-xs whitespace-pre-wrap" style={{ color: BRAND.textSecondary }}>{value}</p>
+            </div>
+            <div className="rounded-lg p-3" style={{ backgroundColor: "white", border: "1px solid #c4b5fd" }}>
+              <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "#7c3aed" }}>AI Version</p>
+              <p className="text-xs whitespace-pre-wrap" style={{ color: BRAND.textPrimary }}>{suggestion}</p>
+            </div>
+          </div>
+          {rationale && (
+            <div className="rounded-lg p-2" style={{ backgroundColor: "white" }}>
+              <p className="text-[10px]" style={{ color: BRAND.textMuted }}>
+                <span className="font-bold">Why:</span> {rationale}
+              </p>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={acceptSuggestion}
+              className="flex-1 rounded-lg px-3 py-2 text-xs font-bold text-white flex items-center justify-center gap-1.5"
+              style={{ backgroundColor: "#7c3aed" }}
+            >
+              <Check size={12} /> Accept AI Version
+            </button>
+            <button
+              onClick={rejectSuggestion}
+              className="flex-1 rounded-lg px-3 py-2 text-xs font-bold flex items-center justify-center gap-1.5 border-2"
+              style={{ borderColor: BRAND.midGray, color: BRAND.textSecondary, backgroundColor: "white" }}
+            >
+              <X size={12} /> Keep Mine
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status === "error" && error && (
+        <div className="mt-2 rounded-lg p-2 flex items-start gap-2" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
+          <AlertTriangle size={12} style={{ color: "#dc2626" }} className="mt-0.5 flex-shrink-0" />
+          <p className="text-xs" style={{ color: "#991b1b" }}>{error}</p>
+          <button onClick={() => setStatus("idle")} className="ml-auto">
+            <X size={12} style={{ color: "#991b1b" }} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const InputField = ({ label, value, onChange, placeholder }) => (
   <div className="space-y-1.5">
     <label className="block text-sm font-semibold" style={{ color: BRAND.navy }}>{label}</label>
@@ -151,6 +286,22 @@ const callAnalysisAPI = async (horizonData) => {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ horizonData }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error(err.error || `API Error ${response.status}`);
+  }
+
+  return response.json();
+};
+
+// ─── AI ENHANCEMENT ENGINE (Gemini Flash) ──────────────────────────────────
+const callEnhanceAPI = async ({ fieldLabel, fieldHint, draft, fullContext }) => {
+  const response = await fetch("/api/enhance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fieldLabel, fieldHint, draft, fullContext }),
   });
 
   if (!response.ok) {
@@ -251,19 +402,25 @@ const generateDossier = (horizonData, gauntletData, monetizationData) => {
 
   y = 60;
 
-  // The Idea
+  // The Idea (Press Release Hook + Innovation)
   heading("THE IDEA", 16);
   spacer(2);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   doc.setTextColor(...NAVY_RGB);
-  const missionLines = doc.splitTextToSize(horizonData.mission || "Not defined", CW);
-  doc.text(missionLines, M, y);
-  y += missionLines.length * 5.5 + 4;
+  const hookLines = doc.splitTextToSize(horizonData.prHook || "Not defined", CW);
+  doc.text(hookLines, M, y);
+  y += hookLines.length * 5.5 + 4;
 
-  if (horizonData.antiMission) {
+  if (horizonData.prInnovation) {
+    subheading("The Innovation");
+    body(horizonData.prInnovation);
+    spacer(4);
+  }
+
+  if (horizonData.whatWeAreNot) {
     subheading("What We Won't Do");
-    body(horizonData.antiMission);
+    body(horizonData.whatWeAreNot);
     spacer(4);
   }
 
@@ -324,41 +481,64 @@ const generateDossier = (horizonData, gauntletData, monetizationData) => {
   heading("STRATEGIC FOUNDATION", 16);
   divider();
 
-  subheading("Mission");
-  body(horizonData.mission || "Not defined");
-  spacer(4);
+  // 0. Press Release
+  subheading("0. The Press Release");
+  if (horizonData.prHook) { body(`Hook: ${horizonData.prHook}`); spacer(1); }
+  if (horizonData.prStatusQuo) { body(`Status Quo: ${horizonData.prStatusQuo}`); spacer(1); }
+  if (horizonData.prInnovation) { body(`Innovation: ${horizonData.prInnovation}`); spacer(1); }
+  if (horizonData.prBeforeAfter) { body(`Before & After: ${horizonData.prBeforeAfter}`); spacer(1); }
+  if (horizonData.prValueProp) { body(`Value Prop: ${horizonData.prValueProp}`); spacer(1); }
+  spacer(3);
 
-  subheading("Anti-Mission");
-  body(horizonData.antiMission || "Not defined");
-  spacer(4);
+  // 1. The Problem
+  subheading("1. The Problem");
+  if (horizonData.problemSituation) { body(`Situation: ${horizonData.problemSituation}`); spacer(1); }
+  if (horizonData.problemVictim) { body(`Victim: ${horizonData.problemVictim}`); spacer(1); }
+  if (horizonData.problemFailureMode) { body(`Failure Mode: ${horizonData.problemFailureMode}`); spacer(1); }
+  if (horizonData.problemConsequence) { body(`Consequence: ${horizonData.problemConsequence}`); spacer(1); }
+  if (horizonData.problemCurrentSolutions) { body(`Why Current Solutions Fail: ${horizonData.problemCurrentSolutions}`); spacer(1); }
+  spacer(3);
 
-  subheading("Strategic Tenets");
-  (horizonData.tenets || []).filter(Boolean).forEach((t, i) => {
-    body(`${i + 1}. ${t}`, 2);
-  });
-  spacer(4);
+  // 2. Who Pays
+  subheading("2. Who Pays");
+  if (horizonData.buyerPersonas) { body(`Buyer: ${horizonData.buyerPersonas}`); spacer(1); }
+  if (horizonData.currentSpend) { body(`Current Spend: ${horizonData.currentSpend}`); spacer(1); }
+  if (horizonData.switchLogic) { body(`Switch Logic: ${horizonData.switchLogic}`); spacer(1); }
+  if (horizonData.realExample) { body(`Real Example: ${horizonData.realExample}`); spacer(1); }
+  if (horizonData.behaviorTest) { body(`Behavior Test: ${horizonData.behaviorTest}`); spacer(1); }
+  spacer(3);
 
-  subheading("Market Tailwinds");
-  body(horizonData.tailwinds || "Not defined");
-  spacer(4);
+  // 3. Why JW Player
+  subheading("3. Why JW Player");
+  if (horizonData.marketExpectation) { body(`Market Expectation: ${horizonData.marketExpectation}`); spacer(1); }
+  if (horizonData.capabilityAlignment) { body(`Capability Alignment: ${horizonData.capabilityAlignment}`); spacer(1); }
+  if (horizonData.structuralFit) { body(`Structural Fit: ${horizonData.structuralFit}`); spacer(1); }
+  if (horizonData.credibilityTest) { body(`Credibility Test: ${horizonData.credibilityTest}`); spacer(1); }
+  if (horizonData.stretchRisk) { body(`Stretch/Risk: ${horizonData.stretchRisk}`); spacer(1); }
+  spacer(3);
 
-  subheading("Market Headwinds");
-  body(horizonData.headwinds || "Not defined");
-  spacer(4);
+  // 4. Money Movement
+  subheading("4. The Money Movement");
+  if (horizonData.moneyToday) { body(`Where the Money Is Today: ${horizonData.moneyToday}`); spacer(1); }
+  if (horizonData.moneyOwners) { body(`Who Owns It: ${horizonData.moneyOwners}`); spacer(1); }
+  if (horizonData.takeMechanism) { body(`How We Take It: ${horizonData.takeMechanism}`); spacer(1); }
+  if (horizonData.moneyPath) { body(`Mechanism: ${horizonData.moneyPath}`); spacer(1); }
+  spacer(3);
 
-  subheading("Core Customer Pain");
-  body(horizonData.customerPain || "Not defined");
-  spacer(4);
+  // 5. Boundaries
+  subheading("5. Boundaries");
+  if (horizonData.whatWeAre) { body(`What We Are: ${horizonData.whatWeAre}`); spacer(1); }
+  if (horizonData.whatWeAreNot) { body(`What We Are Not: ${horizonData.whatWeAreNot}`); spacer(1); }
+  if (horizonData.competitiveBoundaries) { body(`Competitive Boundaries: ${horizonData.competitiveBoundaries}`); spacer(1); }
+  if (horizonData.strategicConstraints) { body(`Strategic Constraints: ${horizonData.strategicConstraints}`); spacer(1); }
+  spacer(3);
 
-  const okrs = (horizonData.okrs || []).filter(o => o.objective);
-  if (okrs.length > 0) {
-    subheading("OKRs");
-    okrs.forEach((o, i) => {
-      body(`O${i + 1}: ${o.objective}`, 2);
-      if (o.keyResults) body(`KRs: ${o.keyResults}`, 6);
-      spacer(2);
-    });
-  }
+  // 6. Open Questions
+  subheading("6. Open Questions / Weak Points");
+  if (horizonData.missingProof) { body(`Missing Proof: ${horizonData.missingProof}`); spacer(1); }
+  if (horizonData.assumptions) { body(`Assumptions: ${horizonData.assumptions}`); spacer(1); }
+  if (horizonData.risks) { body(`Risks: ${horizonData.risks}`); spacer(1); }
+  if (horizonData.unknowns) { body(`Unknowns: ${horizonData.unknowns}`); spacer(1); }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE 3: COMPETITIVE LANDSCAPE
@@ -544,13 +724,52 @@ const buildFeasibilityPayload = (horizonData, gauntletData, monetizationData) =>
     inference: "This strategic dossier has been through AI-powered competitive analysis and challenger interrogation. Please evaluate the FEASIBILITY of this product strategy against our existing infrastructure, architecture, and technical capabilities. Identify any architectural gaps, infrastructure requirements, integration risks, and provide a realistic assessment of what it would take to build and ship this.",
 
     strategy: {
-      mission: horizonData.mission,
-      antiMission: horizonData.antiMission,
-      tenets: (horizonData.tenets || []).filter(Boolean),
-      tailwinds: horizonData.tailwinds,
-      headwinds: horizonData.headwinds,
-      customerPain: horizonData.customerPain,
-      okrs: (horizonData.okrs || []).filter(o => o.objective),
+      pressRelease: {
+        hook: horizonData.prHook,
+        statusQuo: horizonData.prStatusQuo,
+        innovation: horizonData.prInnovation,
+        beforeAfter: horizonData.prBeforeAfter,
+        valueProp: horizonData.prValueProp,
+      },
+      problem: {
+        situation: horizonData.problemSituation,
+        victim: horizonData.problemVictim,
+        failureMode: horizonData.problemFailureMode,
+        consequence: horizonData.problemConsequence,
+        whyCurrentSolutionsFail: horizonData.problemCurrentSolutions,
+      },
+      whoPays: {
+        buyerPersonas: horizonData.buyerPersonas,
+        currentSpend: horizonData.currentSpend,
+        switchLogic: horizonData.switchLogic,
+        realExample: horizonData.realExample,
+        behaviorTest: horizonData.behaviorTest,
+      },
+      whyJW: {
+        marketExpectation: horizonData.marketExpectation,
+        capabilityAlignment: horizonData.capabilityAlignment,
+        structuralFit: horizonData.structuralFit,
+        credibilityTest: horizonData.credibilityTest,
+        stretchRisk: horizonData.stretchRisk,
+      },
+      moneyMovement: {
+        whereTheMoneyIsToday: horizonData.moneyToday,
+        whoCurrentlyOwnsIt: horizonData.moneyOwners,
+        howWeTakeIt: horizonData.takeMechanism,
+        mechanism: horizonData.moneyPath,
+      },
+      boundaries: {
+        whatWeAre: horizonData.whatWeAre,
+        whatWeAreNot: horizonData.whatWeAreNot,
+        competitiveBoundaries: horizonData.competitiveBoundaries,
+        strategicConstraints: horizonData.strategicConstraints,
+      },
+      openQuestions: {
+        missingProof: horizonData.missingProof,
+        assumptions: horizonData.assumptions,
+        risks: horizonData.risks,
+        unknowns: horizonData.unknowns,
+      },
     },
 
     competitiveAnalysis: {
@@ -616,166 +835,194 @@ const callFeasibilityAPI = async (payload) => {
   return response.json();
 };
 
-// ─── MODULE 1: THE HORIZON ──────────────────────────────────────────────────
+// ─── MODULE 1: THE HORIZON (7-SECTION STRATEGY DOC) ─────────────────────────
 const HorizonModule = ({ data, setData, onComplete }) => {
-  const sections = [
+  const [activeSection, setActiveSection] = useState(0);
+
+  const update = (key, value) => setData({ ...data, [key]: value });
+
+  // Serializes the entire strategy doc so the AI can edit any field with full context
+  const buildFullContext = () => {
+    const lines = [
+      `# 0. Press Release`,
+      `Hook: ${data.prHook || "(not yet written)"}`,
+      `Status Quo: ${data.prStatusQuo || "(not yet written)"}`,
+      `Innovation: ${data.prInnovation || "(not yet written)"}`,
+      `Before & After: ${data.prBeforeAfter || "(not yet written)"}`,
+      `Value Prop: ${data.prValueProp || "(not yet written)"}`,
+      ``,
+      `# 1. The Problem`,
+      `Situation: ${data.problemSituation || "(not yet written)"}`,
+      `Victim: ${data.problemVictim || "(not yet written)"}`,
+      `Failure Mode: ${data.problemFailureMode || "(not yet written)"}`,
+      `Consequence: ${data.problemConsequence || "(not yet written)"}`,
+      `Why Current Solutions Fail: ${data.problemCurrentSolutions || "(not yet written)"}`,
+      ``,
+      `# 2. Who Pays`,
+      `Buyer Personas: ${data.buyerPersonas || "(not yet written)"}`,
+      `Current Spend Behavior: ${data.currentSpend || "(not yet written)"}`,
+      `Switch Logic: ${data.switchLogic || "(not yet written)"}`,
+      `Real Example: ${data.realExample || "(not yet written)"}`,
+      `Behavior Test: ${data.behaviorTest || "(not yet written)"}`,
+      ``,
+      `# 3. Why JW Player Should Do This`,
+      `Market Expectation: ${data.marketExpectation || "(not yet written)"}`,
+      `Capability Alignment: ${data.capabilityAlignment || "(not yet written)"}`,
+      `Structural Fit: ${data.structuralFit || "(not yet written)"}`,
+      `Credibility Test: ${data.credibilityTest || "(not yet written)"}`,
+      `Stretch/Risk: ${data.stretchRisk || "(not yet written)"}`,
+      ``,
+      `# 4. The Money Movement`,
+      `Where the Money Is Today: ${data.moneyToday || "(not yet written)"}`,
+      `Who Currently Owns It: ${data.moneyOwners || "(not yet written)"}`,
+      `How We Take It: ${data.takeMechanism || "(not yet written)"}`,
+      `Mechanism/Path: ${data.moneyPath || "(not yet written)"}`,
+      ``,
+      `# 5. Boundaries`,
+      `What We Are: ${data.whatWeAre || "(not yet written)"}`,
+      `What We Are Not: ${data.whatWeAreNot || "(not yet written)"}`,
+      `Competitive Boundaries: ${data.competitiveBoundaries || "(not yet written)"}`,
+      `Strategic Constraints: ${data.strategicConstraints || "(not yet written)"}`,
+      ``,
+      `# 6. Open Questions / Weak Points`,
+      `Missing Proof: ${data.missingProof || "(not yet written)"}`,
+      `Assumptions: ${data.assumptions || "(not yet written)"}`,
+      `Risks: ${data.risks || "(not yet written)"}`,
+      `Unknowns: ${data.unknowns || "(not yet written)"}`,
+    ];
+    return lines.join("\n");
+  };
+
+  const sectionConfig = [
     {
-      id: "mission",
-      content: (
-        <div className="space-y-5">
-          <TextArea
-            label="Mission Statement"
-            value={data.mission}
-            onChange={(v) => setData({ ...data, mission: v })}
-            placeholder="In one sentence: what does this product exist to do? Not 'help customers' — the specific transformation you enable. This should be so clear that a competitor reading it would know exactly where you're aiming."
-            rows={3}
-            hint="Great missions are specific enough to say NO to things. If your mission could belong to any competitor, it's too vague."
-          />
-          <TextArea
-            label="Anti-Mission (What We Refuse To Do)"
-            value={data.antiMission}
-            onChange={(v) => setData({ ...data, antiMission: v })}
-            placeholder="What will you explicitly NOT do, even if customers ask? This is as strategic as your mission. Every company that lost focus said 'yes' one too many times."
-            rows={3}
-          />
-        </div>
-      ),
+      id: "press-release",
+      label: "Press Release",
+      icon: Sparkles,
+      description: "The hook, status quo, innovation, before/after, and value prop — written as if announcing this to the world on day one.",
+      fields: [
+        { key: "prHook", label: "The Hook", rows: 2, placeholder: "Summarize the 'New Reality' in one punchy sentence. What becomes possible the day we ship this?", hint: "One sentence. If a reporter would quote it, you nailed it." },
+        { key: "prStatusQuo", label: "The Status Quo", rows: 3, placeholder: "Describe the current market inefficiency or missed opportunity. What's broken today that everyone accepts?" },
+        { key: "prInnovation", label: "The Innovation", rows: 3, placeholder: "Introduce the new model/product. What's the core idea in plain English?" },
+        { key: "prBeforeAfter", label: "The Before and After", rows: 3, placeholder: "A simple comparison of the outcome for stakeholders before and after this exists." },
+        { key: "prValueProp", label: "The Value Prop", rows: 3, placeholder: "Explicitly state the benefits for each participating party (publishers, viewers, advertisers, partners)." },
+      ],
     },
     {
-      id: "tenets",
-      content: (
-        <div className="space-y-4">
-          <p className="text-sm" style={{ color: BRAND.textSecondary }}>
-            Strategic tenets are your decision-making shortcuts. When two good options conflict, tenets break the tie.
-          </p>
-          {(data.tenets || ["", "", "", ""]).map((t, i) => (
-            <InputField
-              key={i}
-              label={`Tenet ${i + 1}`}
-              value={t}
-              onChange={(v) => {
-                const newTenets = [...(data.tenets || ["", "", "", ""])];
-                newTenets[i] = v;
-                setData({ ...data, tenets: newTenets });
-              }}
-              placeholder={[
-                "e.g., 'Developer experience over enterprise features'",
-                "e.g., 'Latency is a feature — sub-100ms or don't ship'",
-                "e.g., 'Open standards over proprietary lock-in'",
-                "e.g., 'Revenue quality over revenue quantity'",
-              ][i]}
-            />
-          ))}
-        </div>
-      ),
+      id: "problem",
+      label: "The Problem",
+      icon: AlertTriangle,
+      description: "What's broken, who it hurts, and why existing solutions haven't solved it.",
+      fields: [
+        { key: "problemSituation", label: "1.1 The Situation", rows: 3, placeholder: "What is the technical/market context? Provide specific data points or metrics illustrating the current state." },
+        { key: "problemVictim", label: "1.2 The Victim", rows: 2, placeholder: "Who is specifically hurt by this problem (internal teams or external customers)?" },
+        { key: "problemFailureMode", label: "1.3 The Failure Mode", rows: 3, placeholder: "Describe the exact 'moment of failure' or the point where value is lost." },
+        { key: "problemConsequence", label: "1.4 The Consequence", rows: 3, placeholder: "What is the macro-impact (lost revenue, increased costs, brand dilution) at scale?" },
+        { key: "problemCurrentSolutions", label: "1.5 Why Current Solutions Fail", rows: 3, placeholder: "List existing workarounds and explain why they don't solve the root cause." },
+      ],
     },
     {
-      id: "drivers",
-      content: (
-        <div className="space-y-5">
-          <TextArea
-            label="Market Tailwinds"
-            value={data.tailwinds}
-            onChange={(v) => setData({ ...data, tailwinds: v })}
-            placeholder="What macro trends are accelerating demand for your solution? Be specific — 'AI is growing' is not a tailwind. 'Enterprise video consumption is up 340% since 2020 and IT teams lack tools to manage it' is."
-            rows={3}
-          />
-          <TextArea
-            label="Market Headwinds"
-            value={data.headwinds}
-            onChange={(v) => setData({ ...data, headwinds: v })}
-            placeholder="What forces are working against you? Economic, regulatory, competitive, behavioral. Be brutally honest — The Gauntlet will expose any blind spots here."
-            rows={3}
-          />
-          <TextArea
-            label="Core Customer Pain"
-            value={data.customerPain}
-            onChange={(v) => setData({ ...data, customerPain: v })}
-            placeholder="What's the #1 pain your customer has TODAY that your product solves? Not 'they need better tools' — the actual felt pain. 'Their video infrastructure costs $200K/yr and breaks during traffic spikes, costing them $50K per incident.'"
-            rows={3}
-          />
-        </div>
-      ),
+      id: "who-pays",
+      label: "Who Pays",
+      icon: DollarSign,
+      description: "The specific buyer, their current budget, and what triggers them to switch.",
+      fields: [
+        { key: "buyerPersonas", label: "2.1 The Buyer", rows: 2, placeholder: "Define the specific personas or departments who control the budget." },
+        { key: "currentSpend", label: "2.2 Current Spend Behavior", rows: 3, placeholder: "What are they currently spending money on to achieve this goal?" },
+        { key: "switchLogic", label: "2.3 The Switch Logic", rows: 3, placeholder: "What is the specific trigger that makes them move budget to this new solution?" },
+        { key: "realExample", label: "2.4 Real Example", rows: 3, placeholder: "Provide anecdotal or data-backed evidence of existing demand (e.g., lost deals, direct requests, RFPs)." },
+        { key: "behaviorTest", label: "2.5 Behavior Test", rows: 3, placeholder: "Describe the delta between a world with this solution and a world where it never exists." },
+      ],
     },
     {
-      id: "okrs",
-      content: (
-        <div className="space-y-6">
-          {(data.okrs || [{}, {}, {}]).map((okr, i) => (
-            <div key={i} className="rounded-xl border-2 p-5 space-y-3" style={{ borderColor: BRAND.midGray }}>
-              <div className="flex items-center gap-2 mb-2">
-                <div
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold text-white"
-                  style={{ backgroundColor: BRAND.red }}
-                >
-                  O{i + 1}
-                </div>
-                <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>Objective {i + 1}</span>
-              </div>
-              <InputField
-                label="Objective"
-                value={okr.objective}
-                onChange={(v) => {
-                  const newOkrs = [...(data.okrs || [{}, {}, {}])];
-                  newOkrs[i] = { ...newOkrs[i], objective: v };
-                  setData({ ...data, okrs: newOkrs });
-                }}
-                placeholder="Qualitative goal — ambitious but achievable"
-              />
-              <TextArea
-                label="Key Results"
-                value={okr.keyResults}
-                onChange={(v) => {
-                  const newOkrs = [...(data.okrs || [{}, {}, {}])];
-                  newOkrs[i] = { ...newOkrs[i], keyResults: v };
-                  setData({ ...data, okrs: newOkrs });
-                }}
-                placeholder="3 measurable results (one per line). Must be quantified."
-                rows={3}
-              />
-            </div>
-          ))}
-        </div>
-      ),
+      id: "why-jw",
+      label: "Why JW Player",
+      icon: Crown,
+      description: "The capability, credibility, and strategic fit arguments for why JW specifically should do this.",
+      fields: [
+        { key: "marketExpectation", label: "3.1 Market Expectation", rows: 3, placeholder: "How does the market currently perceive JW Player, and does this fit that image?" },
+        { key: "capabilityAlignment", label: "3.2 Capability Alignment", rows: 3, placeholder: "What specific assets (tech, data, relationships) do we own that make us uniquely qualified?" },
+        { key: "structuralFit", label: "3.3 Structural Fit", rows: 3, placeholder: "Where does this live in our existing product/monetization stack?" },
+        { key: "credibilityTest", label: "3.4 Credibility Test", rows: 3, placeholder: "Will the market view this as a natural evolution or a confusing pivot?" },
+        { key: "stretchRisk", label: "3.5 Stretch / Risk", rows: 3, placeholder: "What are the organizational or technical hurdles we haven't cleared yet?" },
+      ],
+    },
+    {
+      id: "money-movement",
+      label: "Money Movement",
+      icon: TrendingUp,
+      description: "Where the dollars are today, who owns them, and how they move into our bank account.",
+      fields: [
+        { key: "moneyToday", label: "4.1 Where the Money Is Today", rows: 3, placeholder: "Identify the specific pools of capital (ad budgets, subscription revenue, infrastructure spend, etc)." },
+        { key: "moneyOwners", label: "4.2 Who Currently Owns It", rows: 3, placeholder: "Name the entities currently capturing this spend." },
+        { key: "takeMechanism", label: "4.3 How We Take It", rows: 2, placeholder: "Expansion (net new revenue) or Displacement (taking from a competitor)? Be explicit." },
+        { key: "moneyPath", label: "4.4 Mechanism", rows: 3, placeholder: "The logical path of how a dollar moves from the buyer to our bank account." },
+      ],
+    },
+    {
+      id: "boundaries",
+      label: "Boundaries",
+      icon: Shield,
+      description: "What we are, what we're not, and who we're choosing not to compete with.",
+      fields: [
+        { key: "whatWeAre", label: "5.1 What We Are", rows: 2, placeholder: "A one-sentence definition of the product/initiative." },
+        { key: "whatWeAreNot", label: "5.2 What We Are Not", rows: 3, placeholder: "Define what we are intentionally not building to avoid scope creep or identity crisis." },
+        { key: "competitiveBoundaries", label: "5.3 Competitive Boundaries", rows: 3, placeholder: "Who are we choosing not to compete with?" },
+        { key: "strategicConstraints", label: "5.4 Strategic Constraints", rows: 3, placeholder: "Any hard dependencies or limitations on the initial rollout (e.g., specific regions or formats)." },
+      ],
+    },
+    {
+      id: "open-questions",
+      label: "Open Questions",
+      icon: Brain,
+      description: "What we still need to prove, the assumptions the whole doc rests on, and the risks.",
+      fields: [
+        { key: "missingProof", label: "6.1 Missing Proof", rows: 3, placeholder: "What data or validation do we still need to collect?" },
+        { key: "assumptions", label: "6.2 Assumptions", rows: 3, placeholder: "What core beliefs must be true for this entire document to remain valid?" },
+        { key: "risks", label: "6.3 Risks", rows: 3, placeholder: "What are the primary threats (cannibalization, reputation, technical blockers)?" },
+        { key: "unknowns", label: "6.4 Unknowns", rows: 3, placeholder: "What questions can only be answered by launching or further engineering discovery?" },
+      ],
     },
   ];
 
-  const sectionLabels = ["Mission & Anti-Mission", "Strategic Tenets", "Market Drivers", "OKRs"];
-  const sectionIcons = [Target, Shield, TrendingUp, Zap];
-  const [activeSection, setActiveSection] = useState(0);
+  const allFields = sectionConfig.flatMap(s => s.fields);
+  const filledCount = allFields.filter(f => data[f.key] && String(data[f.key]).trim()).length;
+  const completeness = Math.round((filledCount / allFields.length) * 100);
 
-  const completeness = useMemo(() => {
-    let filled = 0;
-    let total = 9;
-    if (data.mission) filled++;
-    if (data.antiMission) filled++;
-    (data.tenets || []).forEach((t) => { if (t) filled++; });
-    if (data.tailwinds) filled++;
-    if (data.headwinds) filled++;
-    if (data.customerPain) filled++;
-    // Not counting OKRs as required
-    return Math.round((filled / total) * 100);
-  }, [data]);
+  const activeSectionConfig = sectionConfig[activeSection];
+  const SectionIcon = activeSectionConfig.icon;
 
   return (
     <div className="space-y-6">
       {/* Section Tabs */}
       <div className="flex flex-wrap gap-2">
-        {sectionLabels.map((label, i) => {
-          const Icon = sectionIcons[i];
+        {sectionConfig.map((s, i) => {
+          const Icon = s.icon;
+          const sectionFilled = s.fields.filter(f => data[f.key] && String(data[f.key]).trim()).length;
+          const sectionTotal = s.fields.length;
+          const sectionComplete = sectionFilled === sectionTotal;
           return (
             <button
-              key={i}
+              key={s.id}
               onClick={() => setActiveSection(i)}
-              className="flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-semibold transition-all"
+              className="flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-xs font-semibold transition-all"
               style={{
                 borderColor: activeSection === i ? BRAND.red : BRAND.midGray,
                 backgroundColor: activeSection === i ? `${BRAND.red}08` : "white",
                 color: activeSection === i ? BRAND.red : BRAND.textSecondary,
               }}
             >
-              <Icon size={16} />
-              {label}
+              <Icon size={14} />
+              <span>{i}. {s.label}</span>
+              <span
+                className="inline-flex items-center justify-center rounded-full px-1.5 text-[10px] font-bold"
+                style={{
+                  backgroundColor: sectionComplete ? "#16a34a" : BRAND.midGray,
+                  color: "white",
+                  minWidth: 24,
+                }}
+              >
+                {sectionFilled}/{sectionTotal}
+              </span>
             </button>
           );
         })}
@@ -783,13 +1030,57 @@ const HorizonModule = ({ data, setData, onComplete }) => {
 
       {/* Active Section */}
       <SectionCard>
-        <div className="mb-5">
-          <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>
-            {sectionLabels[activeSection]}
-          </h3>
+        <div className="mb-5 pb-4 border-b-2" style={{ borderColor: BRAND.lightGray }}>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: `${BRAND.red}10` }}>
+              <SectionIcon size={20} style={{ color: BRAND.red }} />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: BRAND.textMuted }}>Section {activeSection}</p>
+              <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>{activeSectionConfig.label}</h3>
+            </div>
+          </div>
+          <p className="text-sm" style={{ color: BRAND.textSecondary }}>{activeSectionConfig.description}</p>
         </div>
-        {sections[activeSection].content}
+        <div className="space-y-5">
+          {activeSectionConfig.fields.map(f => (
+            <EnhancedTextArea
+              key={f.key}
+              label={f.label}
+              value={data[f.key]}
+              onChange={(v) => update(f.key, v)}
+              placeholder={f.placeholder}
+              rows={f.rows}
+              hint={f.hint}
+              fieldHint={f.placeholder}
+              buildContext={buildFullContext}
+            />
+          ))}
+        </div>
       </SectionCard>
+
+      {/* Prev/Next Nav */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => setActiveSection(Math.max(0, activeSection - 1))}
+          disabled={activeSection === 0}
+          className="flex items-center gap-2 rounded-xl border-2 px-4 py-2 text-sm font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          style={{ borderColor: BRAND.midGray, color: BRAND.textSecondary, backgroundColor: "white" }}
+        >
+          <ChevronLeft size={14} /> Previous
+        </button>
+        <span className="text-xs" style={{ color: BRAND.textMuted }}>
+          Section {activeSection + 1} of {sectionConfig.length}
+        </span>
+        <button
+          onClick={() => setActiveSection(Math.min(sectionConfig.length - 1, activeSection + 1))}
+          disabled={activeSection === sectionConfig.length - 1}
+          className="flex items-center gap-2 rounded-xl border-2 px-4 py-2 text-sm font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          style={{ borderColor: BRAND.midGray, color: BRAND.textSecondary, backgroundColor: "white" }}
+        >
+          Next <ChevronRight size={14} />
+        </button>
+      </div>
 
       {/* Completeness & Lock */}
       <div className="flex items-center justify-between rounded-2xl border-2 bg-white p-5" style={{ borderColor: BRAND.midGray }}>
@@ -810,19 +1101,19 @@ const HorizonModule = ({ data, setData, onComplete }) => {
             </span>
           </div>
           <div>
-            <p className="text-sm font-semibold" style={{ color: BRAND.navy }}>Horizon Completeness</p>
+            <p className="text-sm font-semibold" style={{ color: BRAND.navy }}>Strategy Doc Completeness</p>
             <p className="text-xs" style={{ color: BRAND.textMuted }}>
-              {completeness >= 80 ? "Ready to face The Gauntlet" : "Fill in more fields to unlock The Gauntlet"}
+              {completeness >= 70 ? "Ready to face The Gauntlet" : `${filledCount}/${allFields.length} fields filled — aim for 70%+ before locking`}
             </p>
           </div>
         </div>
         <button
           onClick={onComplete}
-          disabled={completeness < 60}
+          disabled={completeness < 50}
           className="rounded-xl px-6 py-3 text-sm font-bold text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
-          style={{ backgroundColor: completeness >= 60 ? BRAND.red : BRAND.midGray }}
-          onMouseEnter={(e) => { if (completeness >= 60) e.target.style.backgroundColor = BRAND.redHover; }}
-          onMouseLeave={(e) => { if (completeness >= 60) e.target.style.backgroundColor = BRAND.red; }}
+          style={{ backgroundColor: completeness >= 50 ? BRAND.red : BRAND.midGray }}
+          onMouseEnter={(e) => { if (completeness >= 50) e.currentTarget.style.backgroundColor = BRAND.redHover; }}
+          onMouseLeave={(e) => { if (completeness >= 50) e.currentTarget.style.backgroundColor = BRAND.red; }}
         >
           <Lock size={16} />
           Lock Horizon & Enter The Gauntlet
@@ -987,27 +1278,27 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
             </h4>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Mission</p>
+                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>The Hook</p>
                 <p className="text-sm mt-0.5" style={{ color: BRAND.textPrimary }}>
-                  {horizonData.mission || "—"}
+                  {horizonData.prHook || "—"}
                 </p>
               </div>
               <div>
-                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Customer Pain</p>
+                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>The Problem</p>
                 <p className="text-sm mt-0.5" style={{ color: BRAND.textPrimary }}>
-                  {horizonData.customerPain || "—"}
+                  {horizonData.problemSituation || "—"}
                 </p>
               </div>
               <div>
-                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Tailwinds</p>
+                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Who Pays</p>
                 <p className="text-sm mt-0.5" style={{ color: BRAND.textPrimary }}>
-                  {horizonData.tailwinds || "—"}
+                  {horizonData.buyerPersonas || "—"}
                 </p>
               </div>
               <div>
-                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>Headwinds</p>
+                <p className="text-xs font-semibold" style={{ color: BRAND.textMuted }}>What We Are Not</p>
                 <p className="text-sm mt-0.5" style={{ color: BRAND.textPrimary }}>
-                  {horizonData.headwinds || "—"}
+                  {horizonData.whatWeAreNot || "—"}
                 </p>
               </div>
             </div>
@@ -1461,7 +1752,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
                         const competitorSummary = (analysisResult?.competitors || [])
                           .map(c => `${c.name} (${c.category}, risk: ${c.aiRiskRating}): ${c.description}`)
                           .join("\n");
-                        const horizonSummary = `Mission: ${horizonData.mission}\nAnti-Mission: ${horizonData.antiMission}\nTailwinds: ${horizonData.tailwinds}\nHeadwinds: ${horizonData.headwinds}\nCustomer Pain: ${horizonData.customerPain}`;
+                        const horizonSummary = `HOOK: ${horizonData.prHook || "—"}\nINNOVATION: ${horizonData.prInnovation || "—"}\nPROBLEM SITUATION: ${horizonData.problemSituation || "—"}\nVICTIM: ${horizonData.problemVictim || "—"}\nBUYER: ${horizonData.buyerPersonas || "—"}\nSWITCH LOGIC: ${horizonData.switchLogic || "—"}\nWHY JW (CAPABILITY ALIGNMENT): ${horizonData.capabilityAlignment || "—"}\nHOW WE TAKE THE MONEY: ${horizonData.takeMechanism || "—"}\nWHAT WE ARE NOT: ${horizonData.whatWeAreNot || "—"}\nKEY ASSUMPTIONS: ${horizonData.assumptions || "—"}\nKNOWN RISKS: ${horizonData.risks || "—"}`;
                         const evaluation = await callScoringAPI({
                           question: currentQ?.question || "",
                           answer: responses[responseKey],
@@ -1832,8 +2123,8 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData }) => {
             </p>
           </div>
           <div className="rounded-xl p-3" style={{ backgroundColor: BRAND.lightGray }}>
-            <p className="text-xs font-semibold mb-1" style={{ color: BRAND.textMuted }}>Mission</p>
-            <p className="text-sm" style={{ color: BRAND.textPrimary }}>{horizonData.mission || "Not yet defined"}</p>
+            <p className="text-xs font-semibold mb-1" style={{ color: BRAND.textMuted }}>The Hook</p>
+            <p className="text-sm" style={{ color: BRAND.textPrimary }}>{horizonData.prHook || "Not yet defined"}</p>
           </div>
         </div>
         {weakAreas.length > 0 && (
@@ -2149,9 +2440,20 @@ export default function App() {
   const [gauntletComplete, setGauntletComplete] = useState(saved?.gauntletComplete ?? false);
 
   const [horizonData, setHorizonData] = useState(saved?.horizonData ?? {
-    mission: "", antiMission: "", tenets: ["", "", "", ""],
-    tailwinds: "", headwinds: "", customerPain: "",
-    okrs: [{}, {}, {}],
+    // 0. Press Release
+    prHook: "", prStatusQuo: "", prInnovation: "", prBeforeAfter: "", prValueProp: "",
+    // 1. The Problem
+    problemSituation: "", problemVictim: "", problemFailureMode: "", problemConsequence: "", problemCurrentSolutions: "",
+    // 2. Who Pays
+    buyerPersonas: "", currentSpend: "", switchLogic: "", realExample: "", behaviorTest: "",
+    // 3. Why JW Player
+    marketExpectation: "", capabilityAlignment: "", structuralFit: "", credibilityTest: "", stretchRisk: "",
+    // 4. Money Movement
+    moneyToday: "", moneyOwners: "", takeMechanism: "", moneyPath: "",
+    // 5. Boundaries
+    whatWeAre: "", whatWeAreNot: "", competitiveBoundaries: "", strategicConstraints: "",
+    // 6. Open Questions
+    missingProof: "", assumptions: "", risks: "", unknowns: "",
   });
   const [gauntletData, setGauntletData] = useState(saved?.gauntletData ?? {
     competitors: [],
