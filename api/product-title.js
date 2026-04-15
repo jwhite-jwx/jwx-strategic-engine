@@ -60,8 +60,9 @@ Respond with ONLY valid JSON in this exact shape:
           },
           generationConfig: {
             temperature: 0.6,
-            maxOutputTokens: 300,
+            maxOutputTokens: 2000,
             responseMimeType: "application/json",
+            thinkingConfig: { thinkingBudget: 0 },
           },
         }),
       }
@@ -74,15 +75,20 @@ Respond with ONLY valid JSON in this exact shape:
 
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const finishReason = data.candidates?.[0]?.finishReason;
+
     if (!text) {
-      return res.status(500).json({ error: "No content in Gemini response", raw: data });
+      return res.status(500).json({
+        error: `No content in Gemini response (finishReason=${finishReason || "unknown"})`,
+        raw: JSON.stringify(data).slice(0, 1000),
+      });
     }
 
     const parsed = parseTitleResponse(text);
     if (!parsed || !parsed.title) {
       return res.status(500).json({
-        error: "Could not parse AI response.",
-        debugRawSnippet: text.slice(0, 300),
+        error: `Could not parse AI response (finishReason=${finishReason || "unknown"})`,
+        debugRawSnippet: text.slice(0, 500),
       });
     }
 
