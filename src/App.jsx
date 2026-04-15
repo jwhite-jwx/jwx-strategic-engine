@@ -309,6 +309,22 @@ const callMonetizationAnalysisAPI = async ({ horizonData, competitiveAnalysis })
   return response.json();
 };
 
+// ─── AI PRODUCT TITLE (Gemini) ─────────────────────────────────────────────
+const callProductTitleAPI = async ({ horizonData }) => {
+  const response = await fetch("/api/product-title", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ horizonData }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error(err.error || `API Error ${response.status}`);
+  }
+
+  return response.json();
+};
+
 // ─── AI SCORING ENGINE ─────────────────────────────────────────────────────
 const callScoringAPI = async ({ question, answer, context, category, competitorContext, horizonContext }) => {
   const response = await fetch("/api/score", {
@@ -351,7 +367,19 @@ const drawJwxLogo = (doc, x, y, size = 12) => {
   doc.text("JWX", x + size / 2, y + size * 0.66, { align: "center" });
 };
 
-const generateDossier = (horizonData, gauntletData, monetizationData) => {
+const generateDossier = async (horizonData, gauntletData, monetizationData) => {
+  // Ask Gemini to summarize the product into a short headline-style title.
+  // Fall back to the PR Hook / Innovation / What-We-Are content if the API fails.
+  let aiTitle = null;
+  let aiTagline = null;
+  try {
+    const titleResp = await callProductTitleAPI({ horizonData });
+    aiTitle = (titleResp?.title || "").trim() || null;
+    aiTagline = (titleResp?.tagline || "").trim() || null;
+  } catch (err) {
+    console.warn("Product title API failed, falling back to raw strategy text:", err);
+  }
+
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = 210;
   const H = 297;
@@ -454,7 +482,9 @@ const generateDossier = (horizonData, gauntletData, monetizationData) => {
     y = M + 110;
   };
 
-  const productIdea = horizonData.prHook || horizonData.prInnovation || horizonData.whatWeAre || "Untitled Product Idea";
+  const fallbackIdea = horizonData.prHook || horizonData.prInnovation || horizonData.whatWeAre || "Untitled Product Idea";
+  const productIdea = aiTitle || fallbackIdea;
+  const productTagline = aiTagline || (aiTitle ? fallbackIdea : "");
   const competitors = gauntletData.competitors || [];
   const landscapeSummary = gauntletData.analysisResult?.landscapeSummary;
 
@@ -489,11 +519,22 @@ const generateDossier = (horizonData, gauntletData, monetizationData) => {
   doc.text("THE PRODUCT IDEA", M, y);
   y += 5;
 
-  doc.setFontSize(16);
+  doc.setFontSize(20);
   doc.setTextColor(...NAVY_RGB);
   const ideaLines = doc.splitTextToSize(productIdea, CW);
   doc.text(ideaLines, M, y);
-  y += ideaLines.length * 7 + 4;
+  y += ideaLines.length * 8 + 2;
+
+  if (productTagline) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...GRAY_RGB);
+    const taglineLines = doc.splitTextToSize(productTagline, CW);
+    doc.text(taglineLines, M, y);
+    y += taglineLines.length * 5 + 3;
+  } else {
+    y += 2;
+  }
 
   divider();
   spacer(2);
@@ -2313,7 +2354,10 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData }) => {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => generateDossier(horizonData, gauntletData, data)}
+            onClick={async () => {
+              try { await generateDossier(horizonData, gauntletData, data); }
+              catch (err) { console.error("Dossier generation failed:", err); alert("Could not generate the dossier. Please try again."); }
+            }}
             className="rounded-xl px-4 py-2 text-xs font-bold text-white flex items-center gap-2 transition-all whitespace-nowrap"
             style={{ backgroundColor: BRAND.red }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = BRAND.redHover}
@@ -2583,7 +2627,10 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData }) => {
               Generates a branded PDF with executive roundup, competitive landscape, interrogation results, and monetization strategy.
             </p>
             <button
-              onClick={() => generateDossier(horizonData, gauntletData, data)}
+              onClick={async () => {
+              try { await generateDossier(horizonData, gauntletData, data); }
+              catch (err) { console.error("Dossier generation failed:", err); alert("Could not generate the dossier. Please try again."); }
+            }}
               className="w-full rounded-xl px-5 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 transition-all"
               style={{ backgroundColor: BRAND.red }}
               onMouseEnter={(e) => e.target.style.backgroundColor = BRAND.redHover}
