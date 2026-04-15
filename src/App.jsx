@@ -3,8 +3,9 @@ import {
   Eye, Sword, DollarSign, Target, Shield, Zap, Users, TrendingUp,
   Lock, Check, ChevronRight, ChevronLeft, ArrowRight, AlertTriangle,
   Crown, Flame, BarChart3, Layers, Brain, Loader2, Star, Plus, X,
-  Search, Globe, Sparkles, RefreshCw
+  Search, Globe, Sparkles, RefreshCw, FileText, Send, Download
 } from "lucide-react";
+import jsPDF from "jspdf";
 
 // ─── BRAND COLORS ───────────────────────────────────────────────────────────
 const BRAND = {
@@ -166,6 +167,445 @@ const callScoringAPI = async ({ question, answer, context, category, competitorC
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, answer, context, category, competitorContext, horizonContext }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error(err.error || `API Error ${response.status}`);
+  }
+
+  return response.json();
+};
+
+// ─── PDF DOSSIER GENERATOR ─────────────────────────────────────────────────
+const NAVY_RGB = [15, 26, 61];
+const RED_RGB = [236, 0, 65];
+const GRAY_RGB = [74, 80, 104];
+const LIGHT_GRAY_RGB = [136, 144, 164];
+
+const generateDossier = (horizonData, gauntletData, monetizationData) => {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210;
+  const M = 20; // margin
+  const CW = W - 2 * M; // content width
+  let y = 0;
+
+  const addPage = () => { doc.addPage(); y = M; };
+
+  const heading = (text, size = 14) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(size);
+    doc.setTextColor(...NAVY_RGB);
+    doc.text(text, M, y);
+    y += size * 0.5 + 2;
+  };
+
+  const subheading = (text) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...RED_RGB);
+    doc.text(text, M, y);
+    y += 6;
+  };
+
+  const body = (text, indent = 0) => {
+    if (!text) return;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...GRAY_RGB);
+    const lines = doc.splitTextToSize(text, CW - indent);
+    doc.text(lines, M + indent, y);
+    y += lines.length * 4.2;
+  };
+
+  const spacer = (h = 4) => { y += h; };
+
+  const divider = () => {
+    doc.setDrawColor(...RED_RGB);
+    doc.setLineWidth(0.5);
+    doc.line(M, y, W - M, y);
+    y += 4;
+  };
+
+  const checkPageSpace = (needed = 30) => {
+    if (y + needed > 277) addPage();
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGE 1: EXECUTIVE ROUNDUP
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Red banner at top
+  doc.setFillColor(...RED_RGB);
+  doc.rect(0, 0, W, 45, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(28);
+  doc.setTextColor(255, 255, 255);
+  doc.text("Strategic Dossier", M, 25);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.text("JWX Strategic Engine — Executive Review", M, 35);
+
+  // Date
+  doc.setFontSize(9);
+  doc.text(new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }), W - M, 35, { align: "right" });
+
+  y = 60;
+
+  // The Idea
+  heading("THE IDEA", 16);
+  spacer(2);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(...NAVY_RGB);
+  const missionLines = doc.splitTextToSize(horizonData.mission || "Not defined", CW);
+  doc.text(missionLines, M, y);
+  y += missionLines.length * 5.5 + 4;
+
+  if (horizonData.antiMission) {
+    subheading("What We Won't Do");
+    body(horizonData.antiMission);
+    spacer(4);
+  }
+
+  divider();
+
+  // Competitive Advantage
+  heading("COMPETITIVE ADVANTAGE", 14);
+  spacer(2);
+  const landscapeSummary = gauntletData.analysisResult?.landscapeSummary;
+  if (landscapeSummary) {
+    body(landscapeSummary);
+  } else {
+    body("Competitive analysis not yet completed.");
+  }
+
+  const competitors = gauntletData.competitors || [];
+  const critical = competitors.filter(c => c.aiRiskRating === "critical" || c.aiRiskRating === "high");
+  if (critical.length > 0) {
+    spacer(3);
+    subheading(`Key Threats (${critical.length})`);
+    critical.forEach(c => {
+      body(`${c.name} (${c.category}) — AI Risk: ${c.aiRiskRating}. ${c.riskRationale || ""}`, 2);
+      spacer(1);
+    });
+  }
+
+  divider();
+
+  // Monetization Opportunity
+  heading("MONETIZATION OPPORTUNITY", 14);
+  spacer(2);
+  if (monetizationData.valueMetric) {
+    subheading("Value Metric");
+    body(monetizationData.valueMetric);
+    spacer(2);
+  }
+  if (monetizationData.pricingPhilosophy) {
+    subheading("Pricing Philosophy");
+    body(monetizationData.pricingPhilosophy);
+    spacer(2);
+  }
+  const tiers = monetizationData.tiers || {};
+  Object.entries(tiers).forEach(([key, tier]) => {
+    if (tier.price || tier.segment) {
+      body(`${key.charAt(0).toUpperCase() + key.slice(1)}: ${tier.price || "TBD"} — ${tier.segment || "Segment TBD"}`, 2);
+    }
+  });
+  if (monetizationData.cac || monetizationData.ltv) {
+    spacer(2);
+    subheading("Unit Economics");
+    body(`CAC: ${monetizationData.cac || "TBD"} | LTV: ${monetizationData.ltv || "TBD"} | Ratio: ${monetizationData.ltvCacRatio || "TBD"}`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGE 2: STRATEGIC FOUNDATION
+  // ═══════════════════════════════════════════════════════════════════════════
+  addPage();
+  heading("STRATEGIC FOUNDATION", 16);
+  divider();
+
+  subheading("Mission");
+  body(horizonData.mission || "Not defined");
+  spacer(4);
+
+  subheading("Anti-Mission");
+  body(horizonData.antiMission || "Not defined");
+  spacer(4);
+
+  subheading("Strategic Tenets");
+  (horizonData.tenets || []).filter(Boolean).forEach((t, i) => {
+    body(`${i + 1}. ${t}`, 2);
+  });
+  spacer(4);
+
+  subheading("Market Tailwinds");
+  body(horizonData.tailwinds || "Not defined");
+  spacer(4);
+
+  subheading("Market Headwinds");
+  body(horizonData.headwinds || "Not defined");
+  spacer(4);
+
+  subheading("Core Customer Pain");
+  body(horizonData.customerPain || "Not defined");
+  spacer(4);
+
+  const okrs = (horizonData.okrs || []).filter(o => o.objective);
+  if (okrs.length > 0) {
+    subheading("OKRs");
+    okrs.forEach((o, i) => {
+      body(`O${i + 1}: ${o.objective}`, 2);
+      if (o.keyResults) body(`KRs: ${o.keyResults}`, 6);
+      spacer(2);
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGE 3: COMPETITIVE LANDSCAPE
+  // ═══════════════════════════════════════════════════════════════════════════
+  addPage();
+  heading("COMPETITIVE LANDSCAPE", 16);
+  divider();
+
+  if (landscapeSummary) {
+    body(landscapeSummary);
+    spacer(6);
+  }
+
+  competitors.forEach((c, i) => {
+    checkPageSpace(25);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...NAVY_RGB);
+    doc.text(`${i + 1}. ${c.name}`, M, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...LIGHT_GRAY_RGB);
+    doc.text(`${c.category} | AI Risk: ${c.aiRiskRating}${gauntletData.pmRatings?.[c.name] ? ` | PM Risk: ${gauntletData.pmRatings[c.name]}` : ""}`, M + 50, y);
+    y += 5;
+    body(c.description || "", 4);
+    if (c.riskRationale) body(`Risk rationale: ${c.riskRationale}`, 4);
+    spacer(3);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGE 4: INTERROGATION RESULTS
+  // ═══════════════════════════════════════════════════════════════════════════
+  addPage();
+  heading("CHALLENGER INTERROGATION RESULTS", 16);
+  divider();
+
+  const interrogationCategories = [
+    { id: "moat", label: "Competitive Moat" },
+    { id: "market", label: "Market Reality" },
+    { id: "execution", label: "Execution Risk" },
+    { id: "customer", label: "Customer Truth" },
+    { id: "economics", label: "Unit Economics" },
+    { id: "strategy", label: "Strategic Leverage" },
+  ];
+
+  const aiScores = gauntletData.interrogationScores || {};
+  const pmSelfScores = gauntletData.pmScores || {};
+  const responses = gauntletData.interrogationResponses || {};
+  const evals = gauntletData.evaluations || {};
+  const followUps = gauntletData.followUpResponses || {};
+
+  // Score summary table
+  subheading("Score Summary (AI vs PM Self-Assessment)");
+  spacer(2);
+  interrogationCategories.forEach(cat => {
+    const aiCatScores = Object.entries(aiScores).filter(([k]) => k.startsWith(cat.id)).map(([,v]) => v);
+    const pmCatScores = Object.entries(pmSelfScores).filter(([k]) => k.startsWith(cat.id)).map(([,v]) => v);
+    const aiAvg = aiCatScores.length > 0 ? (aiCatScores.reduce((a,b) => a+b, 0) / aiCatScores.length).toFixed(1) : "—";
+    const pmAvg = pmCatScores.length > 0 ? (pmCatScores.reduce((a,b) => a+b, 0) / pmCatScores.length).toFixed(1) : "—";
+    body(`${cat.label}: AI ${aiAvg}/5 | PM ${pmAvg}/5`, 2);
+  });
+
+  spacer(6);
+
+  // Detailed Q&A
+  subheading("Detailed Responses");
+  spacer(2);
+  const challengerQs = gauntletData.analysisResult?.challengerQuestions || {};
+
+  interrogationCategories.forEach(cat => {
+    const questions = challengerQs[cat.id] || [];
+    questions.forEach((q, qi) => {
+      checkPageSpace(35);
+      const key = `${cat.id}_${qi}`;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(...NAVY_RGB);
+      const qLines = doc.splitTextToSize(`Q: ${q.question}`, CW - 4);
+      doc.text(qLines, M + 2, y);
+      y += qLines.length * 4 + 2;
+
+      if (responses[key]) {
+        body(`A: ${responses[key]}`, 4);
+      }
+      const ev = evals[key];
+      if (ev) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(...RED_RGB);
+        doc.text(`AI Score: ${ev.score}/5 — ${ev.label}`, M + 4, y);
+        y += 4;
+        if (ev.assessment) body(`Assessment: ${ev.assessment}`, 4);
+      }
+      if (followUps[key]) {
+        body(`Follow-up response: ${followUps[key]}`, 4);
+      }
+      spacer(4);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGE 5: MONETIZATION DETAIL
+  // ═══════════════════════════════════════════════════════════════════════════
+  addPage();
+  heading("MONETIZATION STRATEGY", 16);
+  divider();
+
+  if (monetizationData.valueMetric) {
+    subheading("Value Metric");
+    body(monetizationData.valueMetric);
+    spacer(4);
+  }
+  if (monetizationData.pricingPhilosophy) {
+    subheading("Pricing Philosophy");
+    body(monetizationData.pricingPhilosophy);
+    spacer(4);
+  }
+
+  ["entry", "growth", "enterprise"].forEach(tierKey => {
+    const tier = tiers[tierKey];
+    if (!tier) return;
+    checkPageSpace(30);
+    subheading(`${tierKey.charAt(0).toUpperCase() + tierKey.slice(1)} Tier`);
+    if (tier.price) body(`Price: ${tier.price}`, 2);
+    if (tier.segment) body(`Segment: ${tier.segment}`, 2);
+    if (tier.capabilities) body(`Capabilities: ${tier.capabilities}`, 2);
+    if (tier.upgradeTrigger) body(`Upgrade trigger: ${tier.upgradeTrigger}`, 2);
+    if (tier.marginDefense) body(`Margin defense: ${tier.marginDefense}`, 2);
+    spacer(4);
+  });
+
+  if (monetizationData.cac || monetizationData.ltv || monetizationData.paybackPeriod) {
+    subheading("Unit Economics");
+    body(`CAC: ${monetizationData.cac || "TBD"} | LTV: ${monetizationData.ltv || "TBD"} | Ratio: ${monetizationData.ltvCacRatio || "TBD"}`);
+    if (monetizationData.paybackPeriod) body(`Payback: ${monetizationData.paybackPeriod}`, 2);
+  }
+
+  // Footer on every page
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...LIGHT_GRAY_RGB);
+    doc.text("JWX Strategic Engine — Confidential", M, 290);
+    doc.text(`Page ${i} of ${pageCount}`, W - M, 290, { align: "right" });
+  }
+
+  doc.save("JWX-Strategic-Dossier.pdf");
+};
+
+// ─── FEASIBILITY PAYLOAD BUILDER ───────────────────────────────────────────
+const buildFeasibilityPayload = (horizonData, gauntletData, monetizationData) => {
+  const competitors = gauntletData.competitors || [];
+  const aiScores = gauntletData.interrogationScores || {};
+  const pmSelfScores = gauntletData.pmScores || {};
+
+  const interrogationCategories = [
+    { id: "moat", label: "Competitive Moat" },
+    { id: "market", label: "Market Reality" },
+    { id: "execution", label: "Execution Risk" },
+    { id: "customer", label: "Customer Truth" },
+    { id: "economics", label: "Unit Economics" },
+    { id: "strategy", label: "Strategic Leverage" },
+  ];
+
+  const scoreSummary = interrogationCategories.map(cat => {
+    const aiCatScores = Object.entries(aiScores).filter(([k]) => k.startsWith(cat.id)).map(([,v]) => v);
+    const pmCatScores = Object.entries(pmSelfScores).filter(([k]) => k.startsWith(cat.id)).map(([,v]) => v);
+    return {
+      category: cat.label,
+      aiAvg: aiCatScores.length > 0 ? +(aiCatScores.reduce((a,b) => a+b, 0) / aiCatScores.length).toFixed(1) : null,
+      pmAvg: pmCatScores.length > 0 ? +(pmCatScores.reduce((a,b) => a+b, 0) / pmCatScores.length).toFixed(1) : null,
+    };
+  });
+
+  const weakAreas = scoreSummary.filter(s => s.aiAvg && s.aiAvg < 3).map(s => s.category);
+  const blindSpots = scoreSummary.filter(s => s.aiAvg && s.pmAvg && (s.pmAvg - s.aiAvg) > 1).map(s => s.category);
+
+  return {
+    requestType: "feasibility_analysis",
+    submittedAt: new Date().toISOString(),
+    inference: "This strategic dossier has been through AI-powered competitive analysis and challenger interrogation. Please evaluate the FEASIBILITY of this product strategy against our existing infrastructure, architecture, and technical capabilities. Identify any architectural gaps, infrastructure requirements, integration risks, and provide a realistic assessment of what it would take to build and ship this.",
+
+    strategy: {
+      mission: horizonData.mission,
+      antiMission: horizonData.antiMission,
+      tenets: (horizonData.tenets || []).filter(Boolean),
+      tailwinds: horizonData.tailwinds,
+      headwinds: horizonData.headwinds,
+      customerPain: horizonData.customerPain,
+      okrs: (horizonData.okrs || []).filter(o => o.objective),
+    },
+
+    competitiveAnalysis: {
+      landscapeSummary: gauntletData.analysisResult?.landscapeSummary,
+      competitorCount: competitors.length,
+      competitors: competitors.map(c => ({
+        name: c.name,
+        category: c.category,
+        aiRiskRating: c.aiRiskRating,
+        pmRiskRating: gauntletData.pmRatings?.[c.name] || null,
+        description: c.description,
+        threat: c.threat,
+      })),
+      marketDynamics: gauntletData.analysisResult?.marketDynamics,
+      strategicRecommendations: gauntletData.analysisResult?.strategicRecommendations,
+    },
+
+    challengerResults: {
+      scoreSummary,
+      weakAreas,
+      blindSpots,
+      evaluations: gauntletData.evaluations || {},
+      responses: gauntletData.interrogationResponses || {},
+      followUpResponses: gauntletData.followUpResponses || {},
+    },
+
+    monetization: {
+      valueMetric: monetizationData.valueMetric,
+      pricingPhilosophy: monetizationData.pricingPhilosophy,
+      tiers: monetizationData.tiers,
+      unitEconomics: {
+        cac: monetizationData.cac,
+        ltv: monetizationData.ltv,
+        ltvCacRatio: monetizationData.ltvCacRatio,
+        paybackPeriod: monetizationData.paybackPeriod,
+      },
+    },
+
+    feasibilityQuestions: [
+      "What existing infrastructure components can be leveraged for this product?",
+      "What new systems or services would need to be built from scratch?",
+      "What are the most significant technical risks or architecture gaps?",
+      "What is a realistic timeline for an MVP given our current capabilities?",
+      "Are there any hard technical constraints that make parts of this strategy infeasible?",
+      "What team composition and headcount would be needed?",
+      "What are the estimated infrastructure costs at the proposed pricing tiers?",
+    ],
+  };
+};
+
+const callFeasibilityAPI = async (payload) => {
+  const response = await fetch("/api/feasibility", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -1335,8 +1775,49 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData }) => {
       .sort((a, b) => a.avg - b.avg);
   }, [gauntletData]);
 
+  const scrollToPublish = () => {
+    const el = document.getElementById("publish-section");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="space-y-6">
+      {/* ═══ FINALIZE CTA BAR (ALWAYS VISIBLE AT TOP) ═══ */}
+      <div
+        className="sticky top-4 z-30 rounded-2xl p-4 shadow-xl flex items-center justify-between gap-4"
+        style={{ backgroundColor: BRAND.navy, border: `2px solid ${BRAND.red}` }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ backgroundColor: BRAND.red }}>
+            <FileText size={20} className="text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-white">Ready to finalize?</p>
+            <p className="text-xs" style={{ color: "#cbd5e1" }}>Publish your dossier or send for feasibility review</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => generateDossier(horizonData, gauntletData, data)}
+            className="rounded-xl px-4 py-2 text-xs font-bold text-white flex items-center gap-2 transition-all whitespace-nowrap"
+            style={{ backgroundColor: BRAND.red }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = BRAND.redHover}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = BRAND.red}
+          >
+            <Download size={14} />
+            Publish Dossier (PDF)
+          </button>
+          <button
+            onClick={scrollToPublish}
+            className="rounded-xl px-4 py-2 text-xs font-bold flex items-center gap-2 transition-all border-2 whitespace-nowrap"
+            style={{ backgroundColor: "transparent", color: "white", borderColor: "white" }}
+          >
+            Jump to Finalize
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </div>
+
       {/* Inherited Intelligence */}
       <SectionCard>
         <h4 className="text-sm font-bold flex items-center gap-2 mb-3" style={{ color: BRAND.navy }}>
@@ -1506,7 +1987,136 @@ const MonetizationModule = ({ data, setData, gauntletData, horizonData }) => {
           rows={2}
         />
       </SectionCard>
+
+      {/* ═══ PUBLISH & FEASIBILITY ═══ */}
+      <div id="publish-section" className="mt-8 pt-8 border-t-4 rounded-2xl p-6 scroll-mt-24" style={{ borderColor: BRAND.red, backgroundColor: `${BRAND.red}05` }}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="flex h-14 w-14 items-center justify-center rounded-xl" style={{ backgroundColor: BRAND.red }}>
+            <FileText size={26} className="text-white" />
+          </div>
+          <div>
+            <Badge variant="danger">FINALIZE</Badge>
+            <h3 className="text-2xl font-black mt-1" style={{ color: BRAND.navy }}>Publish & Review</h3>
+            <p className="text-sm" style={{ color: BRAND.textSecondary }}>
+              Generate your executive dossier or send for internal feasibility review
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* PDF Dossier */}
+          <SectionCard>
+            <div className="flex items-center gap-2 mb-3">
+              <Download size={16} style={{ color: BRAND.red }} />
+              <h4 className="text-sm font-bold" style={{ color: BRAND.navy }}>Executive Dossier (PDF)</h4>
+            </div>
+            <p className="text-xs mb-4" style={{ color: BRAND.textSecondary }}>
+              Generates a branded PDF with executive roundup, competitive landscape, interrogation results, and monetization strategy.
+            </p>
+            <button
+              onClick={() => generateDossier(horizonData, gauntletData, data)}
+              className="w-full rounded-xl px-5 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 transition-all"
+              style={{ backgroundColor: BRAND.red }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = BRAND.redHover}
+              onMouseLeave={(e) => e.target.style.backgroundColor = BRAND.red}
+            >
+              <FileText size={16} />
+              Publish Dossier
+            </button>
+          </SectionCard>
+
+          {/* Feasibility Review */}
+          <FeasibilityCard horizonData={horizonData} gauntletData={gauntletData} monetizationData={data} />
+        </div>
+      </div>
     </div>
+  );
+};
+
+// ─── FEASIBILITY REVIEW CARD ───────────────────────────────────────────────
+const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
+  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  const sendForReview = async () => {
+    setStatus("sending");
+    setError(null);
+    try {
+      const payload = buildFeasibilityPayload(horizonData, gauntletData, monetizationData);
+      const res = await callFeasibilityAPI(payload);
+      setResult(res);
+      setStatus("sent");
+    } catch (err) {
+      setError(err.message);
+      setStatus("error");
+    }
+  };
+
+  return (
+    <SectionCard>
+      <div className="flex items-center gap-2 mb-3">
+        <Send size={16} style={{ color: BRAND.navy }} />
+        <h4 className="text-sm font-bold" style={{ color: BRAND.navy }}>Internal Feasibility Review</h4>
+      </div>
+      <p className="text-xs mb-4" style={{ color: BRAND.textSecondary }}>
+        Sends the full strategy dossier to your internal architecture review API for a feasibility assessment against existing infrastructure.
+      </p>
+
+      {status === "idle" && (
+        <button
+          onClick={sendForReview}
+          className="w-full rounded-xl px-5 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 transition-all"
+          style={{ backgroundColor: BRAND.navy }}
+          onMouseEnter={(e) => e.target.style.backgroundColor = BRAND.red}
+          onMouseLeave={(e) => e.target.style.backgroundColor = BRAND.navy}
+        >
+          <Send size={16} />
+          Send for Feasibility Review
+        </button>
+      )}
+
+      {status === "sending" && (
+        <div className="flex items-center justify-center gap-2 py-3">
+          <Loader2 size={16} className="animate-spin" style={{ color: BRAND.red }} />
+          <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>Sending to internal review...</span>
+        </div>
+      )}
+
+      {status === "sent" && (
+        <div className="rounded-xl p-4 space-y-2" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+          <p className="text-sm font-bold flex items-center gap-2" style={{ color: "#16a34a" }}>
+            <Check size={16} /> Sent for Review
+          </p>
+          {result?.message && (
+            <p className="text-xs" style={{ color: BRAND.textSecondary }}>{result.message}</p>
+          )}
+          <button
+            onClick={() => setStatus("idle")}
+            className="text-xs font-semibold underline mt-2"
+            style={{ color: BRAND.navy }}
+          >
+            Send again
+          </button>
+        </div>
+      )}
+
+      {status === "error" && (
+        <div className="rounded-xl p-4 space-y-2" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
+          <p className="text-sm font-bold flex items-center gap-2" style={{ color: "#dc2626" }}>
+            <AlertTriangle size={16} /> Review Error
+          </p>
+          <p className="text-xs" style={{ color: "#991b1b" }}>{error}</p>
+          <button
+            onClick={sendForReview}
+            className="text-xs font-semibold underline mt-2"
+            style={{ color: BRAND.red }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+    </SectionCard>
   );
 };
 
