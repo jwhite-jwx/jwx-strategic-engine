@@ -74,17 +74,56 @@ export default async function handler(req, res) {
 }
 
 function buildPrompt(horizonData) {
+  const np = (v) => (v && String(v).trim()) ? v : "Not provided";
   return `Based on the following product strategy information, perform a DEEP competitive landscape analysis. Use your research capabilities to identify real companies, real market data, and real competitive dynamics.
 
 ## Product Strategy Context
 
-**Mission:** ${horizonData.mission || "Not provided"}
-**Anti-Mission (What we refuse to do):** ${horizonData.antiMission || "Not provided"}
-**Strategic Tenets:** ${(horizonData.tenets || []).filter(Boolean).join(", ") || "Not provided"}
-**Market Tailwinds:** ${horizonData.tailwinds || "Not provided"}
-**Market Headwinds:** ${horizonData.headwinds || "Not provided"}
-**Core Customer Pain:** ${horizonData.customerPain || "Not provided"}
-**OKRs:** ${JSON.stringify(horizonData.okrs?.filter(o => o.objective) || [])}
+### 0. The Press Release
+- **Hook:** ${np(horizonData.prHook)}
+- **Status Quo:** ${np(horizonData.prStatusQuo)}
+- **The Innovation:** ${np(horizonData.prInnovation)}
+- **Before & After:** ${np(horizonData.prBeforeAfter)}
+- **Value Prop:** ${np(horizonData.prValueProp)}
+
+### 1. The Problem
+- **Situation:** ${np(horizonData.problemSituation)}
+- **Victim:** ${np(horizonData.problemVictim)}
+- **Failure Mode:** ${np(horizonData.problemFailureMode)}
+- **Consequence:** ${np(horizonData.problemConsequence)}
+- **Why Current Solutions Fail:** ${np(horizonData.problemCurrentSolutions)}
+
+### 2. Who Pays
+- **Buyer Personas:** ${np(horizonData.buyerPersonas)}
+- **Current Spend Behavior:** ${np(horizonData.currentSpend)}
+- **Switch Logic:** ${np(horizonData.switchLogic)}
+- **Real Example / Demand Evidence:** ${np(horizonData.realExample)}
+- **Behavior Test:** ${np(horizonData.behaviorTest)}
+
+### 3. Why JW Player Should Do This
+- **Market Expectation:** ${np(horizonData.marketExpectation)}
+- **Capability Alignment:** ${np(horizonData.capabilityAlignment)}
+- **Structural Fit:** ${np(horizonData.structuralFit)}
+- **Credibility Test:** ${np(horizonData.credibilityTest)}
+- **Stretch / Risk:** ${np(horizonData.stretchRisk)}
+
+### 4. The Money Movement
+- **Where the Money Is Today:** ${np(horizonData.moneyToday)}
+- **Who Currently Owns It:** ${np(horizonData.moneyOwners)}
+- **How We Take It (Expansion or Displacement):** ${np(horizonData.takeMechanism)}
+- **Mechanism:** ${np(horizonData.moneyPath)}
+
+### 5. Boundaries
+- **What We Are:** ${np(horizonData.whatWeAre)}
+- **What We Are Not:** ${np(horizonData.whatWeAreNot)}
+- **Competitive Boundaries (who we won't compete with):** ${np(horizonData.competitiveBoundaries)}
+- **Strategic Constraints:** ${np(horizonData.strategicConstraints)}
+
+### 6. Open Questions / Weak Points
+- **Missing Proof:** ${np(horizonData.missingProof)}
+- **Assumptions:** ${np(horizonData.assumptions)}
+- **Risks:** ${np(horizonData.risks)}
+- **Unknowns:** ${np(horizonData.unknowns)}
 
 ## Your Task
 
