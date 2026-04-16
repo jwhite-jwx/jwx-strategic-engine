@@ -14,20 +14,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { payload, djToken } = req.body;
+    const { payload } = req.body;
 
     if (\!payload || typeof payload \!== "object") {
       return res.status(400).json({ error: "Missing feasibility payload" });
     }
-    if (\!djToken || typeof djToken \!== "string" || \!djToken.trim()) {
-      return res.status(400).json({ error: "Missing DJ auth token. Run `boxer login` and paste the contents of ~/.cache/authsvc/session." });
-    }
-
     // ── Step 1: Build the DJ query from the strategy payload ──────────────
     const djQuery = buildDJQuery(payload);
 
     // ── Step 2: Call DJ MCP API ───────────────────────────────────────────
-    const djResponse = await callDJ(djQuery, djToken.trim());
+    const djResponse = await callDJ(djQuery);
 
     // ── Step 3: Run DJ response through Gemini for PM-friendly rewrite ───
     const pmVersion = await rewriteForPM(djResponse, payload, geminiKey);
@@ -48,13 +44,12 @@ export default async function handler(req, res) {
 
 // ─── DJ MCP CALLER ──────────────────────────────────────────────────────────
 
-async function callDJ(query, token) {
+async function callDJ(query) {
   const response = await fetch("https://dj-mcp.jwp.io/api/query", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-API-Key": "jwx-dev-key",
-      "Authorization": `Bearer ${token}`,
     },
     body: JSON.stringify({
       query,
@@ -64,9 +59,6 @@ async function callDJ(query, token) {
 
   if (\!response.ok) {
     const errText = await response.text().catch(() => "");
-    if (response.status === 401 || response.status === 403) {
-      throw new Error("DJ authentication failed. Your token may have expired — run `boxer login` and paste a fresh token.");
-    }
     throw new Error(`DJ API error (${response.status}): ${errText.slice(0, 500)}`);
   }
 
