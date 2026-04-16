@@ -373,11 +373,18 @@ const generateDossier = async (horizonData, gauntletData, monetizationData) => {
   let aiTitle = null;
   let aiTagline = null;
   try {
+    console.log("[dossier] calling /api/product-title with horizonData…");
     const titleResp = await callProductTitleAPI({ horizonData });
+    console.log("[dossier] /api/product-title responded:", titleResp);
     aiTitle = (titleResp?.title || "").trim() || null;
     aiTagline = (titleResp?.tagline || "").trim() || null;
+    if (!aiTitle) {
+      console.warn("[dossier] AI returned no title — using fallback.");
+      alert("AI title generation returned empty — using fallback text. Check console for details.");
+    }
   } catch (err) {
-    console.warn("Product title API failed, falling back to raw strategy text:", err);
+    console.error("[dossier] Product title API failed:", err);
+    alert(`Could not generate AI title: ${err.message}\n\nUsing fallback text. Make sure /api/product-title.js is deployed.`);
   }
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -959,7 +966,25 @@ const buildFeasibilityPayload = (horizonData, gauntletData, monetizationData) =>
   return {
     requestType: "feasibility_analysis",
     submittedAt: new Date().toISOString(),
-    inference: "This strategic dossier has been through AI-powered competitive analysis and challenger interrogation. Please evaluate the FEASIBILITY of this product strategy against our existing infrastructure, architecture, and technical capabilities. Identify any architectural gaps, infrastructure requirements, integration risks, and provide a realistic assessment of what it would take to build and ship this.",
+    inference: [
+      "SCOPE LOCK: Evaluate the feasibility of ONLY the product literally described in this dossier — nothing more.",
+      "The 'boundaries' object (whatWeAre / whatWeAreNot / competitiveBoundaries / strategicConstraints) is the definitive scope. Treat it as a hard contract. If a capability is not in 'whatWeAre', it is OUT of scope for this review.",
+      "",
+      "YOUR JOB:",
+      "1. Determine whether the product AS DESCRIBED can be built using JW's existing infrastructure, systems, and codebases.",
+      "2. Identify which specific JW systems can be used as-is, which need modification, and which components are missing.",
+      "3. Quantify the lift: realistic MVP timeline, team composition, and rough infra cost range at the stated scale.",
+      "4. Flag any technical constraint in our current stack that makes the product AS SCOPED infeasible.",
+      "",
+      "DO NOT:",
+      "- Expand, reimagine, or 'improve' the product. You are not a product designer.",
+      "- Suggest adjacent features, additional phases, or a larger vision than what is written.",
+      "- Propose a bigger platform play, rebrand, or strategic pivot — even if one seems obvious.",
+      "- Recommend rescoping the product to better fit our infrastructure. If something is infeasible, say so plainly; do not redesign it.",
+      "- Pad the estimate for features that aren't in this dossier.",
+      "",
+      "If the dossier is ambiguous about a specific capability, default to the narrowest reasonable interpretation and note the ambiguity — do not assume the larger interpretation.",
+    ].join("\n"),
 
     strategy: {
       pressRelease: {
@@ -1047,13 +1072,14 @@ const buildFeasibilityPayload = (horizonData, gauntletData, monetizationData) =>
     },
 
     feasibilityQuestions: [
-      "What existing infrastructure components can be leveraged for this product?",
-      "What new systems or services would need to be built from scratch?",
-      "What are the most significant technical risks or architecture gaps?",
-      "What is a realistic timeline for an MVP given our current capabilities?",
-      "Are there any hard technical constraints that make parts of this strategy infeasible?",
-      "What team composition and headcount would be needed?",
-      "What are the estimated infrastructure costs at the proposed pricing tiers?",
+      "Which specific JW systems, services, or repositories can be used AS-IS to deliver the product exactly as described in the 'boundaries' section? List by name.",
+      "For the product as literally scoped (no expansions, no adjacent features), what components would need to be built new or materially modified? Be specific and minimal — only what is required to ship what's written.",
+      "What technical risks, architecture gaps, or integration hazards exist IN OUR CURRENT STACK for delivering this specific scope? Do not list risks for features outside the dossier.",
+      "Given the scope in 'whatWeAre' and the limits in 'strategicConstraints', what is a realistic MVP timeline? Assume the smallest credible team, not an aspirational one.",
+      "Are there hard technical constraints in our existing infrastructure that make the product AS DESCRIBED infeasible? Flag them directly — do not recommend rescoping to work around them.",
+      "What is the minimum team composition needed to ship exactly this scope? Do not staff for a broader roadmap or a future phase.",
+      "At the customer scale and usage levels implied by the strategy, what are rough Year 1 and Year 2 infrastructure cost ranges?",
+      "On a 1-5 scale, how confident are you in this feasibility read? If below 4, name the specific unknowns that would need discovery to raise confidence.",
     ],
   };
 };
