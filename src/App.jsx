@@ -2963,7 +2963,7 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
       {status === "sending" && (
         <div className="flex items-center justify-center gap-2 py-3">
           <Loader2 size={16} className="animate-spin" style={{ color: BRAND.red }} />
-          <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>Analyzing with DJ + generating PM version...</span>
+          <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>Querying DJ (this may take 1-3 minutes as it searches GitLab, Notion, Jira, etc.)...</span>
         </div>
       )}
 
