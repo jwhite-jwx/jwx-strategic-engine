@@ -4,31 +4,40 @@
 // Returns BOTH documents to the frontend.
 
 export default async function handler(req, res) {
-  if (req.method \!== "POST") {
+  if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   const geminiKey = process.env.GEMINI_API_KEY;
-  if (\!geminiKey) {
+  if (!geminiKey) {
     return res.status(500).json({ error: "GEMINI_API_KEY not configured in Vercel environment variables" });
   }
 
   try {
+    console.log("[feasibility] Step 0: Handler called, parsing body");
     const { payload } = req.body;
 
-    if (\!payload || typeof payload \!== "object") {
+    if (!payload || typeof payload !== "object") {
       return res.status(400).json({ error: "Missing feasibility payload" });
     }
+    console.log("[feasibility] Step 0.5: Payload received, keys:", Object.keys(payload));
+
     // ── Step 1: Build the DJ query from the strategy payload ──────────────
     const djQuery = buildDJQuery(payload);
+    console.log("[feasibility] Step 1: DJ query built, length:", djQuery.length);
 
     // ── Step 2: Call DJ MCP API ───────────────────────────────────────────
+    console.log("[feasibility] Step 2: Calling DJ MCP API...");
     const djResponse = await callDJ(djQuery);
+    console.log("[feasibility] Step 2 done: DJ response length:", djResponse.length);
 
     // ── Step 3: Run DJ response through Gemini for PM-friendly rewrite ───
+    console.log("[feasibility] Step 3: Calling Gemini for PM rewrite...");
     const pmVersion = await rewriteForPM(djResponse, payload, geminiKey);
+    console.log("[feasibility] Step 3 done: PM version headline:", pmVersion?.headline);
 
     // ── Step 4: Return both documents ────────────────────────────────────
+    console.log("[feasibility] Step 4: Returning both documents");
     return res.status(200).json({
       djRaw: djResponse,
       pmVersion,
@@ -36,7 +45,7 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    console.error("Feasibility review error:", err);
+    console.error("[feasibility] FATAL ERROR:", err.message, err.stack);
     return res.status(500).json({ error: err.message || "Internal server error" });
   }
 }
@@ -57,14 +66,14 @@ async function callDJ(query) {
     }),
   });
 
-  if (\!response.ok) {
+  if (!response.ok) {
     const errText = await response.text().catch(() => "");
     throw new Error(`DJ API error (${response.status}): ${errText.slice(0, 500)}`);
   }
 
   const data = await response.json();
 
-  if (\!data.response || typeof data.response \!== "string") {
+  if (!data.response || typeof data.response !== "string") {
     throw new Error("DJ returned an empty response. The query may have been too large or the service may be temporarily unavailable.");
   }
 
@@ -274,7 +283,7 @@ Respond with ONLY valid JSON:
     }
   );
 
-  if (\!response.ok) {
+  if (!response.ok) {
     const errText = await response.text().catch(() => "");
     throw new Error(`Gemini PM-rewrite failed (${response.status}): ${errText.slice(0, 300)}`);
   }
@@ -282,7 +291,7 @@ Respond with ONLY valid JSON:
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-  if (\!text) {
+  if (!text) {
     // If Gemini fails, return the raw DJ response as-is rather than failing entirely
     return {
       document: djResponse,
