@@ -1086,11 +1086,11 @@ const buildFeasibilityPayload = (horizonData, gauntletData, monetizationData) =>
   };
 };
 
-const callFeasibilityAPI = async (payload) => {
+const callFeasibilityAPI = async (payload, djToken) => {
   const response = await fetch("/api/feasibility", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ payload, djToken }),
   });
 
   if (!response.ok) {
@@ -2835,13 +2835,106 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
   const [status, setStatus] = useState("idle"); // idle | sending | sent | error
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [djToken, setDjToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
+
+  const generateFeasibilityPDF = (title, content, filename) => {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    const usable = pageWidth - margin * 2;
+    let y = 20;
+
+    // Header
+    doc.setFillColor(15, 26, 61); // BRAND.navy
+    doc.rect(0, 0, pageWidth, 35, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text(title, margin, 23);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Generated ${new Date().toLocaleDateString()} | JWX Strategic Engine`, margin, 30);
+    y = 45;
+
+    // Body
+    doc.setTextColor(15, 26, 61);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+
+    const lines = content.split("\n");
+    for (const line of lines) {
+      if (y > 275) {
+        doc.addPage();
+        y = 20;
+      }
+
+      const trimmed = line.trim();
+
+      // Markdown-style headers
+      if (trimmed.startsWith("## ")) {
+        y += 4;
+        doc.setFontSize(13);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(236, 0, 65); // BRAND.red
+        doc.text(trimmed.replace(/^##\s*/, ""), margin, y);
+        doc.setTextColor(15, 26, 61);
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        y += 7;
+      } else if (trimmed.startsWith("# ")) {
+        y += 6;
+        doc.setFontSize(15);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(236, 0, 65);
+        doc.text(trimmed.replace(/^#\s*/, ""), margin, y);
+        doc.setTextColor(15, 26, 61);
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        y += 8;
+      } else if (trimmed.startsWith("### ")) {
+        y += 3;
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.text(trimmed.replace(/^###\s*/, ""), margin, y);
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        y += 6;
+      } else if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+        const bulletText = trimmed.replace(/^[-*]\s*/, "");
+        const wrapped = doc.splitTextToSize("\u2022  " + bulletText.replace(/\*\*/g, ""), usable - 5);
+        for (const wl of wrapped) {
+          if (y > 275) { doc.addPage(); y = 20; }
+          doc.text(wl, margin + 3, y);
+          y += 5;
+        }
+      } else if (trimmed.length === 0) {
+        y += 3;
+      } else {
+        const clean = trimmed.replace(/\*\*/g, "");
+        const wrapped = doc.splitTextToSize(clean, usable);
+        for (const wl of wrapped) {
+          if (y > 275) { doc.addPage(); y = 20; }
+          doc.text(wl, margin, y);
+          y += 5;
+        }
+      }
+    }
+
+    doc.save(filename);
+  };
 
   const sendForReview = async () => {
+    if (\!djToken.trim()) {
+      setError("Please paste your DJ auth token. Run `boxer login` then `cat ~/.cache/authsvc/session` to get it.");
+      setStatus("error");
+      return;
+    }
     setStatus("sending");
     setError(null);
     try {
       const payload = buildFeasibilityPayload(horizonData, gauntletData, monetizationData);
-      const res = await callFeasibilityAPI(payload);
+      const res = await callFeasibilityAPI(payload, djToken.trim());
       setResult(res);
       setStatus("sent");
     } catch (err) {
@@ -2857,8 +2950,36 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
         <h4 className="text-sm font-bold" style={{ color: BRAND.navy }}>Internal Feasibility Review</h4>
       </div>
       <p className="text-xs mb-4" style={{ color: BRAND.textSecondary }}>
-        Sends the full strategy dossier to your internal architecture review API for a feasibility assessment against existing infrastructure.
+        Sends the full strategy dossier to DJ for a feasibility assessment against existing JW infrastructure. Returns both the raw engineering assessment and a PM-ready version.
       </p>
+
+      {/* Token input */}
+      <div className="mb-4">
+        <label className="block text-xs font-semibold mb-1" style={{ color: BRAND.navy }}>
+          DJ Auth Token
+        </label>
+        <div className="relative">
+          <input
+            type={showToken ? "text" : "password"}
+            value={djToken}
+            onChange={(e) => setDjToken(e.target.value)}
+            placeholder="Paste token from: cat ~/.cache/authsvc/session"
+            className="w-full rounded-lg border px-3 py-2 text-xs font-mono pr-16"
+            style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
+          />
+          <button
+            type="button"
+            onClick={() => setShowToken(\!showToken)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold px-2 py-0.5 rounded"
+            style={{ color: BRAND.textMuted }}
+          >
+            {showToken ? "Hide" : "Show"}
+          </button>
+        </div>
+        <p className="text-xs mt-1" style={{ color: BRAND.textMuted }}>
+          Run <code className="bg-gray-100 px-1 rounded text-xs">boxer login</code> then <code className="bg-gray-100 px-1 rounded text-xs">cat ~/.cache/authsvc/session</code>
+        </p>
+      </div>
 
       {status === "idle" && (
         <button
@@ -2876,24 +2997,63 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
       {status === "sending" && (
         <div className="flex items-center justify-center gap-2 py-3">
           <Loader2 size={16} className="animate-spin" style={{ color: BRAND.red }} />
-          <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>Sending to internal review...</span>
+          <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>Analyzing with DJ + generating PM version...</span>
         </div>
       )}
 
-      {status === "sent" && (
-        <div className="rounded-xl p-4 space-y-2" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-          <p className="text-sm font-bold flex items-center gap-2" style={{ color: "#16a34a" }}>
-            <Check size={16} /> Sent for Review
-          </p>
-          {result?.message && (
-            <p className="text-xs" style={{ color: BRAND.textSecondary }}>{result.message}</p>
+      {status === "sent" && result && (
+        <div className="space-y-3">
+          {/* Headline */}
+          {result.pmVersion?.headline && (
+            <div className="rounded-xl p-3" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+              <p className="text-sm font-bold flex items-center gap-2" style={{ color: "#16a34a" }}>
+                <Check size={16} /> Feasibility Review Complete
+              </p>
+              <p className="text-xs mt-1" style={{ color: BRAND.textSecondary }}>
+                {result.pmVersion.headline}
+              </p>
+            </div>
           )}
+
+          {/* Download buttons */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => generateFeasibilityPDF(
+                "Engineering Feasibility Assessment",
+                result.djRaw,
+                "feasibility-engineering-raw.pdf"
+              )}
+              className="rounded-xl px-4 py-3 text-xs font-bold flex items-center justify-center gap-2 transition-all border"
+              style={{ borderColor: BRAND.navy, color: BRAND.navy }}
+              onMouseEnter={(e) => { e.target.style.backgroundColor = BRAND.navy; e.target.style.color = "#fff"; }}
+              onMouseLeave={(e) => { e.target.style.backgroundColor = "transparent"; e.target.style.color = BRAND.navy; }}
+            >
+              <Download size={14} />
+              Raw DJ Assessment
+            </button>
+            <button
+              onClick={() => generateFeasibilityPDF(
+                "PM Feasibility Review",
+                result.pmVersion?.document || result.djRaw,
+                "feasibility-pm-review.pdf"
+              )}
+              className="rounded-xl px-4 py-3 text-xs font-bold text-white flex items-center justify-center gap-2 transition-all"
+              style={{ backgroundColor: BRAND.red }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = BRAND.redHover}
+              onMouseLeave={(e) => e.target.style.backgroundColor = BRAND.red}
+            >
+              <Download size={14} />
+              PM Review (PDF)
+            </button>
+          </div>
+
+          {/* Send again */}
           <button
-            onClick={() => setStatus("idle")}
-            className="text-xs font-semibold underline mt-2"
+            onClick={() => { setStatus("idle"); setResult(null); }}
+            className="text-xs font-semibold underline mt-1"
             style={{ color: BRAND.navy }}
           >
-            Send again
+            Run again
           </button>
         </div>
       )}
@@ -2905,11 +3065,11 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
           </p>
           <p className="text-xs" style={{ color: "#991b1b" }}>{error}</p>
           <button
-            onClick={sendForReview}
+            onClick={() => setStatus("idle")}
             className="text-xs font-semibold underline mt-2"
             style={{ color: BRAND.red }}
           >
-            Retry
+            Try again
           </button>
         </div>
       )}
