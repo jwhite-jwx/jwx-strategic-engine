@@ -63,7 +63,7 @@ const TextArea = ({ label, value, onChange, placeholder, rows = 3, hint }) => (
 );
 
 // ─── ENHANCED TEXTAREA WITH AI "HELP ME MAKE THIS BETTER" ───────────────────
-const EnhancedTextArea = ({ label, value, onChange, placeholder, rows = 3, hint, fieldHint, buildContext }) => {
+const EnhancedTextArea = ({ label, value, onChange, placeholder, rows = 3, hint, fieldHint, buildContext, mode = "tighten" }) => {
   const [status, setStatus] = useState("idle"); // idle | loading | suggesting | error
   const [suggestion, setSuggestion] = useState(null);
   const [rationale, setRationale] = useState("");
@@ -84,6 +84,7 @@ const EnhancedTextArea = ({ label, value, onChange, placeholder, rows = 3, hint,
         fieldHint: fieldHint || hint || "",
         draft: value,
         fullContext,
+        mode,
       });
       setSuggestion(result.enhanced);
       setRationale(result.rationale || "");
@@ -278,11 +279,11 @@ const callAnalysisAPI = async (horizonData) => {
 };
 
 // ─── AI ENHANCEMENT ENGINE (Gemini Flash) ──────────────────────────────────
-const callEnhanceAPI = async ({ fieldLabel, fieldHint, draft, fullContext }) => {
+const callEnhanceAPI = async ({ fieldLabel, fieldHint, draft, fullContext, mode }) => {
   const response = await fetch("/api/enhance", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fieldLabel, fieldHint, draft, fullContext }),
+    body: JSON.stringify({ fieldLabel, fieldHint, draft, fullContext, mode }),
   });
 
   if (!response.ok) {
@@ -1057,6 +1058,7 @@ const buildFeasibilityPayload = (horizonData, gauntletData, monetizationData) =>
       evaluations: gauntletData.evaluations || {},
       responses: gauntletData.interrogationResponses || {},
       followUpResponses: gauntletData.followUpResponses || {},
+      skippedQuestions: gauntletData.skippedQuestions || {},
     },
 
     monetization: {
@@ -1405,6 +1407,8 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
   const [evaluations, setEvaluations] = useState(data.evaluations || {}); // AI evaluations keyed by responseKey
   const [followUpResponses, setFollowUpResponses] = useState(data.followUpResponses || {}); // Follow-up answers keyed by responseKey
   const [pmScores, setPmScores] = useState(data.pmScores || {}); // PM self-ratings before AI scores
+  const [skippedQuestions, setSkippedQuestions] = useState(data.skippedQuestions || {}); // { [responseKey]: true } — PM marked the question as not relevant
+  const [enhanceByKey, setEnhanceByKey] = useState({}); // { [responseKey]: { status, suggestion, rationale, error } } — Expand-with-AI per gauntlet question
   const [isScoring, setIsScoring] = useState(false);
   const [scoringError, setScoringError] = useState(null);
 
@@ -1421,11 +1425,12 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
         evaluations,
         followUpResponses,
         pmScores,
+        skippedQuestions,
       }));
     }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisResult, manualCompetitors, pmRatings, responses, scores, evaluations, followUpResponses, pmScores]);
+  }, [analysisResult, manualCompetitors, pmRatings, responses, scores, evaluations, followUpResponses, pmScores, skippedQuestions]);
 
   // Challenger questions from AI or fallback
   const challengerQuestions = useMemo(() => {
@@ -1894,10 +1899,13 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
     const totalAnswered = Object.keys(responses).filter((k) => responses[k]).length;
     const totalQuestions = INTERROGATION_CATEGORIES.length * 2;
     const catAnswered = Object.keys(responses).filter((k) => k.startsWith(cat.id) && responses[k]).length;
-    const sectionsWithAnswer = INTERROGATION_CATEGORIES.filter(c =>
-      Object.keys(responses).some(k => k.startsWith(c.id) && responses[k]?.trim())
-    ).length;
+    const sectionsWithAnswer = INTERROGATION_CATEGORIES.filter(c => {
+      const hasAnswer = Object.keys(responses).some(k => k.startsWith(c.id) && responses[k]?.trim());
+      const hasSkip = Object.keys(skippedQuestions).some(k => k.startsWith(c.id) && skippedQuestions[k]);
+      return hasAnswer || hasSkip;
+    }).length;
     const canProceed = sectionsWithAnswer >= INTERROGATION_CATEGORIES.length;
+    const isSkipped = !!skippedQuestions[responseKey];
 
     return (
       <div className="space-y-6">
@@ -1910,7 +1918,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
             <div>
               <h3 className="text-lg font-bold" style={{ color: BRAND.navy }}>Steel Man Interrogation</h3>
               <p className="text-xs" style={{ color: BRAND.textMuted }}>
-                {sectionsWithAnswer}/{INTERROGATION_CATEGORIES.length} sections answered · answer one per section to continue
+                {sectionsWithAnswer}/{INTERROGATION_CATEGORIES.length} sections addressed · answer or mark not-relevant one per section to continue
               </p>
             </div>
           </div>
@@ -1929,6 +1937,8 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
           {INTERROGATION_CATEGORIES.map((c, i) => {
             const Icon = c.icon;
             const answered = Object.keys(responses).filter((k) => k.startsWith(c.id) && responses[k]).length;
+            const skipped = Object.keys(skippedQuestions).filter((k) => k.startsWith(c.id) && skippedQuestions[k]).length;
+            const addressed = Math.min(2, answered + skipped);
             return (
               <button
                 key={c.id}
@@ -1943,10 +1953,10 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
                 <Icon size={14} />
                 {c.label}
                 <span className="rounded-full px-1.5 py-0.5 text-[10px]" style={{
-                  backgroundColor: answered === 2 ? "#dcfce7" : `${BRAND.red}10`,
-                  color: answered === 2 ? "#16a34a" : BRAND.red,
+                  backgroundColor: addressed === 2 ? "#dcfce7" : `${BRAND.red}10`,
+                  color: addressed === 2 ? "#16a34a" : BRAND.red,
                 }}>
-                  {answered}/2
+                  {addressed}/2
                 </span>
               </button>
             );
@@ -1978,21 +1988,165 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
             </>
           )}
 
-          {/* Answer Input */}
-          <textarea
-            value={responses[responseKey] || ""}
-            onChange={(e) => setResponses({ ...responses, [responseKey]: e.target.value })}
-            placeholder="Defend your position. Be specific — hand-waving will be exposed..."
-            rows={4}
-            disabled={!!evaluations[responseKey]}
-            className="w-full rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none mb-4 disabled:opacity-60 disabled:bg-gray-50"
-            style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
-            onFocus={(e) => e.target.style.borderColor = BRAND.red}
-            onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
-          />
+          {/* Skipped State — PM marked question as not relevant */}
+          {isSkipped ? (
+            <div className="rounded-xl border-2 border-dashed p-4 mb-4 flex items-center justify-between" style={{ borderColor: BRAND.midGray, backgroundColor: BRAND.lightGray }}>
+              <div className="flex items-center gap-2">
+                <X size={14} style={{ color: BRAND.textMuted }} />
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: BRAND.textSecondary }}>Marked not relevant to this product</p>
+                  <p className="text-[11px]" style={{ color: BRAND.textMuted }}>This counts toward unlocking the Vulnerability Report, but won't be scored.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  const next = { ...skippedQuestions };
+                  delete next[responseKey];
+                  setSkippedQuestions(next);
+                }}
+                className="rounded-lg border-2 px-3 py-1.5 text-xs font-semibold transition-all"
+                style={{ borderColor: BRAND.midGray, color: BRAND.textSecondary, backgroundColor: "white" }}
+              >
+                I want to answer this
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Answer Input — with Expand-with-AI */}
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: BRAND.textMuted }}>Your Defense</span>
+                <button
+                  onClick={async () => {
+                    const draft = (responses[responseKey] || "").trim();
+                    if (!draft) {
+                      setEnhanceByKey(prev => ({ ...prev, [responseKey]: { status: "error", error: "Write a rough draft first — the AI expands your words, it doesn't invent them." } }));
+                      return;
+                    }
+                    setEnhanceByKey(prev => ({ ...prev, [responseKey]: { status: "loading" } }));
+                    try {
+                      const competitorSummary = (analysisResult?.competitors || [])
+                        .map(c => `${c.name} (${c.category}, risk: ${c.aiRiskRating}): ${c.description}`).join("\n");
+                      const horizonSummary = `HOOK: ${horizonData.prHook || "—"}\nINNOVATION: ${horizonData.prInnovation || "—"}\nPROBLEM SITUATION: ${horizonData.problemSituation || "—"}\nVICTIM: ${horizonData.problemVictim || "—"}\nBUYER: ${horizonData.buyerPersonas || "—"}\nSWITCH LOGIC: ${horizonData.switchLogic || "—"}\nWHY JW: ${horizonData.capabilityAlignment || "—"}\nWHAT WE ARE NOT: ${horizonData.whatWeAreNot || "—"}\nASSUMPTIONS: ${horizonData.assumptions || "—"}\nRISKS: ${horizonData.risks || "—"}`;
+                      const fullContext = `## Strategy Context\n${horizonSummary}\n\n## Competitive Landscape\n${competitorSummary || "(no competitors mapped)"}\n\n## The Interrogation Question Being Answered\n${currentQ?.question || ""}\n${currentQ?.context ? `(Why this question matters: ${currentQ.context})` : ""}`;
+                      const result = await callEnhanceAPI({
+                        fieldLabel: `Defense — ${cat.label} Q${currentQuestionIndex + 1}`,
+                        fieldHint: currentQ?.context || "",
+                        draft,
+                        fullContext,
+                        mode: "expand",
+                      });
+                      setEnhanceByKey(prev => ({ ...prev, [responseKey]: { status: "suggesting", suggestion: result.enhanced, rationale: result.rationale || "" } }));
+                    } catch (err) {
+                      setEnhanceByKey(prev => ({ ...prev, [responseKey]: { status: "error", error: err.message || "Failed to expand" } }));
+                    }
+                  }}
+                  disabled={enhanceByKey[responseKey]?.status === "loading" || !!evaluations[responseKey]}
+                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all disabled:opacity-50"
+                  style={{ backgroundColor: "#f5f3ff", color: "#7c3aed", border: "1px solid #ddd6fe" }}
+                  title="Blow out your draft into a fully-reasoned defense"
+                >
+                  {enhanceByKey[responseKey]?.status === "loading" ? (
+                    <><Loader2 size={12} className="animate-spin" /> Expanding...</>
+                  ) : (
+                    <><Sparkles size={12} /> Expand with AI</>
+                  )}
+                </button>
+              </div>
+              <textarea
+                value={responses[responseKey] || ""}
+                onChange={(e) => setResponses({ ...responses, [responseKey]: e.target.value })}
+                placeholder="Defend your position. Be specific — hand-waving will be exposed..."
+                rows={4}
+                disabled={!!evaluations[responseKey]}
+                className="w-full rounded-xl border-2 bg-white px-4 py-3 text-sm transition-all placeholder:text-gray-400 focus:outline-none mb-2 disabled:opacity-60 disabled:bg-gray-50"
+                style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
+                onFocus={(e) => e.target.style.borderColor = BRAND.red}
+                onBlur={(e) => e.target.style.borderColor = BRAND.midGray}
+              />
+
+              {/* Skip link — only before the PM has locked in a score */}
+              {!evaluations[responseKey] && !isScoring && (
+                <div className="flex justify-end mb-4">
+                  <button
+                    onClick={() => {
+                      setSkippedQuestions({ ...skippedQuestions, [responseKey]: true });
+                      // Clear any draft answer so the scoring flow doesn't trigger
+                      if (responses[responseKey]) {
+                        const nextResponses = { ...responses };
+                        delete nextResponses[responseKey];
+                        setResponses(nextResponses);
+                      }
+                    }}
+                    className="text-xs font-semibold underline transition-all"
+                    style={{ color: BRAND.textMuted }}
+                    title="Mark this question as not relevant to this specific product — no answer required"
+                  >
+                    This question doesn't apply to my product — skip
+                  </button>
+                </div>
+              )}
+
+              {/* Expand-with-AI: Suggestion Panel */}
+              {enhanceByKey[responseKey]?.status === "suggesting" && enhanceByKey[responseKey]?.suggestion && (
+                <div className="mb-4 rounded-xl p-4 space-y-3" style={{ backgroundColor: "#faf5ff", border: "2px solid #ddd6fe" }}>
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={14} style={{ color: "#7c3aed" }} />
+                    <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#7c3aed" }}>AI Expanded Version</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-lg p-3" style={{ backgroundColor: "white", border: `1px solid ${BRAND.midGray}` }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: BRAND.textMuted }}>Your Draft</p>
+                      <p className="text-xs whitespace-pre-wrap" style={{ color: BRAND.textSecondary }}>{responses[responseKey]}</p>
+                    </div>
+                    <div className="rounded-lg p-3" style={{ backgroundColor: "white", border: "1px solid #c4b5fd" }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "#7c3aed" }}>AI Expanded</p>
+                      <p className="text-xs whitespace-pre-wrap" style={{ color: BRAND.textPrimary }}>{enhanceByKey[responseKey].suggestion}</p>
+                    </div>
+                  </div>
+                  {enhanceByKey[responseKey].rationale && (
+                    <div className="rounded-lg p-2" style={{ backgroundColor: "white" }}>
+                      <p className="text-[10px]" style={{ color: BRAND.textMuted }}>
+                        <span className="font-bold">Why:</span> {enhanceByKey[responseKey].rationale}
+                      </p>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setResponses({ ...responses, [responseKey]: enhanceByKey[responseKey].suggestion });
+                        setEnhanceByKey(prev => ({ ...prev, [responseKey]: { status: "idle" } }));
+                      }}
+                      className="flex-1 rounded-lg px-3 py-2 text-xs font-bold text-white flex items-center justify-center gap-1.5"
+                      style={{ backgroundColor: "#7c3aed" }}
+                    >
+                      <Check size={12} /> Accept Expanded Version
+                    </button>
+                    <button
+                      onClick={() => setEnhanceByKey(prev => ({ ...prev, [responseKey]: { status: "idle" } }))}
+                      className="flex-1 rounded-lg px-3 py-2 text-xs font-bold flex items-center justify-center gap-1.5 border-2"
+                      style={{ borderColor: BRAND.midGray, color: BRAND.textSecondary, backgroundColor: "white" }}
+                    >
+                      <X size={12} /> Keep Mine
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Expand-with-AI: Error */}
+              {enhanceByKey[responseKey]?.status === "error" && (
+                <div className="mb-4 rounded-lg p-2 flex items-start gap-2" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
+                  <AlertTriangle size={12} style={{ color: "#dc2626" }} className="mt-0.5 flex-shrink-0" />
+                  <p className="text-xs" style={{ color: "#991b1b" }}>{enhanceByKey[responseKey].error}</p>
+                  <button onClick={() => setEnhanceByKey(prev => ({ ...prev, [responseKey]: { status: "idle" } }))} className="ml-auto">
+                    <X size={12} style={{ color: "#991b1b" }} />
+                  </button>
+                </div>
+              )}
+            </>
+          )}
 
           {/* PM Self-Rating — auto-triggers AI evaluation on click */}
-          {!evaluations[responseKey] && !isScoring && responses[responseKey]?.trim() && (
+          {!isSkipped && !evaluations[responseKey] && !isScoring && responses[responseKey]?.trim() && (
             <div className="rounded-xl border-2 p-4 mb-4 space-y-3" style={{ borderColor: BRAND.midGray }}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider" style={{ color: BRAND.navy }}>Rate Your Answer</span>
@@ -2281,6 +2435,7 @@ const GauntletModule = ({ data, setData, horizonData, onComplete }) => {
                   evaluations,
                   followUpResponses,
                   pmScores,
+                  skippedQuestions,
                   competitors: allCompetitors,
                   pmRatings,
                   analysisResult,
@@ -2812,6 +2967,7 @@ export default function App() {
     analysisResult: null,
     interrogationResponses: {},
     interrogationScores: {},
+    skippedQuestions: {},
   });
   const [monetizationData, setMonetizationData] = useState(saved?.monetizationData ?? {
     valueMetric: "", pricingPhilosophy: "",
