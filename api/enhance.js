@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { fieldLabel, fieldHint, draft, fullContext } = req.body;
+    const { fieldLabel, fieldHint, draft, fullContext, mode } = req.body;
 
     if (!draft || !draft.trim()) {
       return res.status(400).json({ error: "Missing draft text" });
@@ -21,7 +21,51 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing fieldLabel" });
     }
 
-    const prompt = `You are a sharp, senior product strategy editor helping a Product Manager write an investment-grade strategy document. The PM has drafted one field and wants you to make it better.
+    const effectiveMode = mode === "expand" ? "expand" : "tighten";
+    const systemText = effectiveMode === "expand"
+      ? "You are a rigorous, explanation-heavy product strategy editor. Your job is to EXPAND a Product Manager's terse draft into a fully-reasoned, defensible answer — one that walks through the mechanism, the evidence, and the implications. Respond with valid JSON only, no markdown."
+      : "You are a ruthless but precise product strategy editor. Always respond with valid JSON only — no markdown, no code blocks, just raw JSON. Make edits tighter, more specific, and more rigorous without inventing facts.";
+
+    const prompt = effectiveMode === "expand"
+      ? `You are helping a Product Manager BLOW OUT a draft answer into a fully-reasoned, deeply-explained defense. The PM wrote something terse and wants you to expand it into a rigorous, specific, explanation-heavy version they can actually use in an exec-level interrogation.
+
+## Field Being Edited
+**${fieldLabel}**
+${fieldHint ? `Guidance for this field: ${fieldHint}` : ""}
+
+## Full Strategy Document Context
+The PM has written the following elsewhere in their strategy. Use this as ground truth for what the product is, who the customer is, and what the competitive context is. Do NOT edit any of these fields — only the draft at the bottom.
+
+${fullContext || "(No other sections filled in yet.)"}
+
+## PM's Draft for "${fieldLabel}"
+${draft}
+
+## Your Task — EXPAND, DON'T TIGHTEN
+Rewrite the draft above into a SUBSTANTIALLY LONGER, deeply-explained version. The goal is to take the PM's skeleton and turn it into a fully-reasoned answer that:
+
+1. **Spells out the mechanism.** If the PM says "we'll win because X", explain exactly HOW X leads to winning — the causal chain, step by step.
+2. **Surfaces the underlying reasoning.** Walk through the "because" behind each claim. Don't just assert; argue.
+3. **Names specific evidence, competitors, or analogues** already supported by the context above. Use company names, product names, and concrete numbers where the strategy document supports them.
+4. **Anticipates the counter.** If there's an obvious pushback to a point, acknowledge it in one clause and address it.
+5. **Adds concrete examples** or specific scenarios — grounded in the product described, not made up.
+6. **Structures the answer so each claim has a "why" and a "so what"** attached.
+
+Aim for 3-5× the length of the original draft. Make it feel like a senior PM explaining their logic in full, not a bullet point.
+
+## CRITICAL RULES — STILL TRUE EVEN WHEN EXPANDING
+- DO NOT invent facts, numbers, companies, or deals that are NOT in the PM's draft or the full context above. If you need evidence and the context doesn't provide it, say "as reflected in our [stated assumption / internal data / pilot learnings]" rather than fabricating a specific number.
+- DO NOT change the core argument. This is still an expansion of the PM's position, not a different position.
+- DO NOT add generic filler like "In today's fast-paced market" or "As we all know" or "At the end of the day".
+- Preserve any specific data points, company names, or numbers the PM included verbatim.
+- Keep it plain prose. You may use short paragraphs, but NO headings, NO bullet points unless the original had them.
+
+Respond with ONLY valid JSON:
+{
+  "enhanced": "<the substantially expanded draft>",
+  "rationale": "<one sentence on what layer of reasoning you added>"
+}`
+      : `You are a sharp, senior product strategy editor helping a Product Manager write an investment-grade strategy document. The PM has drafted one field and wants you to make it better.
 
 ## Field Being Edited
 **${fieldLabel}**
@@ -70,15 +114,11 @@ Respond with ONLY valid JSON:
             },
           ],
           systemInstruction: {
-            parts: [
-              {
-                text: "You are a ruthless but precise product strategy editor. Always respond with valid JSON only — no markdown, no code blocks, just raw JSON. Make edits tighter, more specific, and more rigorous without inventing facts.",
-              },
-            ],
+            parts: [{ text: systemText }],
           },
           generationConfig: {
-            temperature: 0.5,
-            maxOutputTokens: 4000,
+            temperature: effectiveMode === "expand" ? 0.65 : 0.5,
+            maxOutputTokens: effectiveMode === "expand" ? 8000 : 4000,
             responseMimeType: "application/json",
           },
         }),
