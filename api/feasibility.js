@@ -1,4 +1,7 @@
 // api/feasibility.js — Vercel Serverless Function
+
+// Vercel Pro allows up to 300s; set to max for DJ + Gemini round-trip
+export const maxDuration = 300;
 // Sends full strategy dossier to DJ MCP for feasibility review,
 // then runs the response through Gemini to produce a PM-friendly version.
 // Returns BOTH documents to the frontend.
@@ -54,7 +57,7 @@ export default async function handler(req, res) {
 // ─── DJ MCP CALLER ──────────────────────────────────────────────────────────
 
 async function callDJ(query) {
-  const response = await fetch("https://dj-mcp.jwp.io/api/query", {
+  const response = await fetch("https://dj.jwp.io/api/query", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -62,7 +65,7 @@ async function callDJ(query) {
     },
     body: JSON.stringify({
       query,
-      model: "sonnet",
+      model: "sonnet-4.5",
     }),
   });
 
