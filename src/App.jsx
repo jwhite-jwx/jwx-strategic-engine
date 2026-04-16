@@ -1086,20 +1086,29 @@ const buildFeasibilityPayload = (horizonData, gauntletData, monetizationData) =>
   };
 };
 
-const callFeasibilityAPI = async (payload) => {
-  const response = await fetch("/api/feasibility", {
+const callFeasibilityAPI = async (payload, onStatusUpdate) => {
+  // Both DJ + Gemini calls happen server-side in /api/feasibility
+  onStatusUpdate?.("Sending to DJ for feasibility review \u2014 this may take a few minutes...");
+
+  const res = await fetch("/api/feasibility", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ payload }),
   });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-    throw new Error(err.error || `API Error ${response.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error || `Feasibility API failed (${res.status})`);
   }
 
-  return response.json();
+  const data = await res.json();
+  return {
+    djRaw: data.djRaw,
+    pmVersion: data.pmVersion,
+    generatedAt: data.generatedAt,
+  };
 };
+
 
 // ─── MODULE 1: THE HORIZON (7-SECTION STRATEGY DOC) ─────────────────────────
 const HorizonModule = ({ data, setData, onComplete }) => {
@@ -2835,6 +2844,7 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
   const [status, setStatus] = useState("idle"); // idle | sending | sent | error
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [statusMsg, setStatusMsg] = useState("");
 
 
   const generateFeasibilityPDF = (title, content, filename) => {
@@ -2928,7 +2938,7 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
     setError(null);
     try {
       const payload = buildFeasibilityPayload(horizonData, gauntletData, monetizationData);
-      const res = await callFeasibilityAPI(payload);
+      const res = await callFeasibilityAPI(payload, (msg) => setStatusMsg(msg));
       setResult(res);
       setStatus("sent");
     } catch (err) {
@@ -2963,7 +2973,7 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
       {status === "sending" && (
         <div className="flex items-center justify-center gap-2 py-3">
           <Loader2 size={16} className="animate-spin" style={{ color: BRAND.red }} />
-          <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>Querying DJ (this may take 1-3 minutes as it searches GitLab, Notion, Jira, etc.)...</span>
+          <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>{statusMsg || "Starting feasibility review..."}</span>
         </div>
       )}
 
