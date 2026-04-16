@@ -2925,7 +2925,7 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
   };
 
   const sendForReview = async () => {
-    if (\!djToken.trim()) {
+    if (!djToken.trim()) {
       setError("Please paste your DJ auth token. Run `boxer login` then `cat ~/.cache/authsvc/session` to get it.");
       setStatus("error");
       return;
@@ -2969,7 +2969,7 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
           />
           <button
             type="button"
-            onClick={() => setShowToken(\!showToken)}
+            onClick={() => setShowToken(!showToken)}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold px-2 py-0.5 rounded"
             style={{ color: BRAND.textMuted }}
           >
