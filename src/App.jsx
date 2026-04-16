@@ -1086,11 +1086,11 @@ const buildFeasibilityPayload = (horizonData, gauntletData, monetizationData) =>
   };
 };
 
-const callFeasibilityAPI = async (payload, djToken) => {
+const callFeasibilityAPI = async (payload) => {
   const response = await fetch("/api/feasibility", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ payload, djToken }),
+    body: JSON.stringify({ payload }),
   });
 
   if (!response.ok) {
@@ -2835,8 +2835,7 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
   const [status, setStatus] = useState("idle"); // idle | sending | sent | error
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [djToken, setDjToken] = useState("");
-  const [showToken, setShowToken] = useState(false);
+
 
   const generateFeasibilityPDF = (title, content, filename) => {
     const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -2925,16 +2924,11 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
   };
 
   const sendForReview = async () => {
-    if (!djToken.trim()) {
-      setError("Please paste your DJ auth token. Run `boxer login` then `cat ~/.cache/authsvc/session` to get it.");
-      setStatus("error");
-      return;
-    }
     setStatus("sending");
     setError(null);
     try {
       const payload = buildFeasibilityPayload(horizonData, gauntletData, monetizationData);
-      const res = await callFeasibilityAPI(payload, djToken.trim());
+      const res = await callFeasibilityAPI(payload);
       setResult(res);
       setStatus("sent");
     } catch (err) {
@@ -2952,34 +2946,6 @@ const FeasibilityCard = ({ horizonData, gauntletData, monetizationData }) => {
       <p className="text-xs mb-4" style={{ color: BRAND.textSecondary }}>
         Sends the full strategy dossier to DJ for a feasibility assessment against existing JW infrastructure. Returns both the raw engineering assessment and a PM-ready version.
       </p>
-
-      {/* Token input */}
-      <div className="mb-4">
-        <label className="block text-xs font-semibold mb-1" style={{ color: BRAND.navy }}>
-          DJ Auth Token
-        </label>
-        <div className="relative">
-          <input
-            type={showToken ? "text" : "password"}
-            value={djToken}
-            onChange={(e) => setDjToken(e.target.value)}
-            placeholder="Paste token from: cat ~/.cache/authsvc/session"
-            className="w-full rounded-lg border px-3 py-2 text-xs font-mono pr-16"
-            style={{ borderColor: BRAND.midGray, color: BRAND.textPrimary }}
-          />
-          <button
-            type="button"
-            onClick={() => setShowToken(!showToken)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold px-2 py-0.5 rounded"
-            style={{ color: BRAND.textMuted }}
-          >
-            {showToken ? "Hide" : "Show"}
-          </button>
-        </div>
-        <p className="text-xs mt-1" style={{ color: BRAND.textMuted }}>
-          Run <code className="bg-gray-100 px-1 rounded text-xs">boxer login</code> then <code className="bg-gray-100 px-1 rounded text-xs">cat ~/.cache/authsvc/session</code>
-        </p>
-      </div>
 
       {status === "idle" && (
         <button
