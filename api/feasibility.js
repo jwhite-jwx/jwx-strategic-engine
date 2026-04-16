@@ -1,10 +1,10 @@
 // api/feasibility.js — Vercel Serverless Function
+// Step 1: Builds a structured query from the strategy payload and sends it to DJ (dj.jwp.io)
+// Step 2: Takes DJ's raw response and rewrites it via Gemini into a PM-friendly document
+// Returns both the raw DJ assessment and the PM version
 
-// Vercel Pro allows up to 300s; set to max for DJ + Gemini round-trip
+// Allow up to 5 minutes for DJ + Gemini processing
 export const maxDuration = 300;
-// Sends full strategy dossier to DJ MCP for feasibility review,
-// then runs the response through Gemini to produce a PM-friendly version.
-// Returns BOTH documents to the frontend.
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -17,32 +17,62 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log("[feasibility] Step 0: Handler called, parsing body");
     const { payload } = req.body;
 
     if (!payload || typeof payload !== "object") {
-      return res.status(400).json({ error: "Missing feasibility payload" });
+      return res.status(400).json({ error: "Missing strategy payload" });
     }
-    console.log("[feasibility] Step 0.5: Payload received, keys:", Object.keys(payload));
 
-    // ── Step 1: Build the DJ query from the strategy payload ──────────────
+    // --- Step 1: Query DJ ---
+    console.log("[feasibility] Building DJ query from payload...");
     const djQuery = buildDJQuery(payload);
-    console.log("[feasibility] Step 1: DJ query built, length:", djQuery.length);
+    console.log("[feasibility] DJ query length:", djQuery.length, "chars");
+    console.log("[feasibility] Calling DJ at dj.jwp.io...");
 
-    // ── Step 2: Call DJ MCP API ───────────────────────────────────────────
-    console.log("[feasibility] Step 2: Calling DJ MCP API...");
-    const djResponse = await callDJ(djQuery);
-    console.log("[feasibility] Step 2 done: DJ response length:", djResponse.length);
+    const djController = new AbortController();
+    const djTimeout = setTimeout(() => djController.abort(), 240000); // 4 min timeout
 
-    // ── Step 3: Run DJ response through Gemini for PM-friendly rewrite ───
-    console.log("[feasibility] Step 3: Calling Gemini for PM rewrite...");
-    const pmVersion = await rewriteForPM(djResponse, payload, geminiKey);
-    console.log("[feasibility] Step 3 done: PM version headline:", pmVersion?.headline);
+    let djRes;
+    try {
+      djRes = await fetch("https://dj.jwp.io/api/query", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": "jwx-dev-key",
+        },
+        body: JSON.stringify({ query: djQuery, model: "sonnet-4.5" }),
+        signal: djController.signal,
+      });
+    } catch (fetchErr) {
+      clearTimeout(djTimeout);
+      if (fetchErr.name === "AbortError") {
+        throw new Error("DJ query timed out after 4 minutes. DJ may be under heavy load — try again.");
+      }
+      throw new Error(`DJ fetch failed: ${fetchErr.message}`);
+    }
+    clearTimeout(djTimeout);
 
-    // ── Step 4: Return both documents ────────────────────────────────────
-    console.log("[feasibility] Step 4: Returning both documents");
+    if (!djRes.ok) {
+      const errText = await djRes.text().catch(() => "");
+      throw new Error(`DJ API error (${djRes.status}): ${errText.slice(0, 300)}`);
+    }
+
+    const djData = await djRes.json();
+    const djRaw = djData.response;
+
+    if (!djRaw || typeof djRaw !== "string" || djRaw.trim().length === 0) {
+      throw new Error("DJ returned an empty response. The model may be unavailable — try again.");
+    }
+
+    console.log("[feasibility] DJ response received, length:", djRaw.length);
+
+    // --- Step 2: Gemini PM Rewrite ---
+    console.log("[feasibility] Calling Gemini for PM rewrite...");
+    const pmVersion = await rewriteForPM(djRaw, payload, geminiKey);
+    console.log("[feasibility] PM rewrite done, headline:", pmVersion?.headline);
+
     return res.status(200).json({
-      djRaw: djResponse,
+      djRaw,
       pmVersion,
       generatedAt: new Date().toISOString(),
     });
@@ -54,37 +84,7 @@ export default async function handler(req, res) {
 }
 
 
-// ─── DJ MCP CALLER ──────────────────────────────────────────────────────────
-
-async function callDJ(query) {
-  const response = await fetch("https://dj.jwp.io/api/query", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": "jwx-dev-key",
-    },
-    body: JSON.stringify({
-      query,
-      model: "sonnet-4.5",
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text().catch(() => "");
-    throw new Error(`DJ API error (${response.status}): ${errText.slice(0, 500)}`);
-  }
-
-  const data = await response.json();
-
-  if (!data.response || typeof data.response !== "string") {
-    throw new Error("DJ returned an empty response. The query may have been too large or the service may be temporarily unavailable.");
-  }
-
-  return data.response;
-}
-
-
-// ─── DJ QUERY BUILDER ───────────────────────────────────────────────────────
+// --- BUILD DJ QUERY ---
 
 function buildDJQuery(payload) {
   const s = payload.strategy || {};
@@ -102,74 +102,34 @@ function buildDJQuery(payload) {
   const inference = payload.inference || "";
 
   const sections = [];
+  const push = (label, val) => {
+    if (val && typeof val === "string" && val.trim()) sections.push(`${label}: ${val.trim()}`);
+  };
 
-  // Instructions
-  sections.push("=== FEASIBILITY REVIEW REQUEST ===");
-  sections.push("");
-  sections.push(inference);
-  sections.push("");
-
-  // Product scope (boundaries first — this is the contract)
+  sections.push("=== FEASIBILITY REVIEW REQUEST ===", "", inference, "");
   sections.push("=== PRODUCT SCOPE & BOUNDARIES ===");
-  pushIfPresent(sections, "What We Are", b.whatWeAre);
-  pushIfPresent(sections, "What We Are Not", b.whatWeAreNot);
-  pushIfPresent(sections, "Competitive Boundaries", b.competitiveBoundaries);
-  pushIfPresent(sections, "Strategic Constraints", b.strategicConstraints);
+  push("What We Are", b.whatWeAre); push("What We Are Not", b.whatWeAreNot);
+  push("Competitive Boundaries", b.competitiveBoundaries); push("Strategic Constraints", b.strategicConstraints);
+  sections.push("", "=== PRESS RELEASE ===");
+  push("Hook", pr.hook); push("Status Quo", pr.statusQuo); push("Innovation", pr.innovation);
+  push("Before & After", pr.beforeAfter); push("Value Prop", pr.valueProp);
+  sections.push("", "=== PROBLEM ===");
+  push("Situation", prob.situation); push("Victim", prob.victim); push("Failure Mode", prob.failureMode);
+  push("Consequence", prob.consequence); push("Why Current Solutions Fail", prob.whyCurrentSolutionsFail);
+  sections.push("", "=== WHO PAYS ===");
+  push("Buyer Personas", wp.buyerPersonas); push("Current Spend", wp.currentSpend);
+  push("Switch Logic", wp.switchLogic); push("Demand Evidence", wp.realExample); push("Behavior Test", wp.behaviorTest);
+  sections.push("", "=== WHY JW PLAYER ===");
+  push("Market Expectation", wj.marketExpectation); push("Capability Alignment", wj.capabilityAlignment);
+  push("Structural Fit", wj.structuralFit); push("Credibility Test", wj.credibilityTest); push("Stretch / Risk", wj.stretchRisk);
+  sections.push("", "=== MONEY MOVEMENT ===");
+  push("Where Money Is Today", mm.whereTheMoneyIsToday); push("Who Owns It", mm.whoCurrentlyOwnsIt);
+  push("How We Take It", mm.howWeTakeIt); push("Mechanism", mm.mechanism);
+  sections.push("", "=== OPEN QUESTIONS ===");
+  push("Missing Proof", oq.missingProof); push("Assumptions", oq.assumptions);
+  push("Risks", oq.risks); push("Unknowns", oq.unknowns);
   sections.push("");
 
-  // Press release
-  sections.push("=== PRESS RELEASE ===");
-  pushIfPresent(sections, "Hook", pr.hook);
-  pushIfPresent(sections, "Status Quo", pr.statusQuo);
-  pushIfPresent(sections, "Innovation", pr.innovation);
-  pushIfPresent(sections, "Before & After", pr.beforeAfter);
-  pushIfPresent(sections, "Value Prop", pr.valueProp);
-  sections.push("");
-
-  // Problem
-  sections.push("=== PROBLEM ===");
-  pushIfPresent(sections, "Situation", prob.situation);
-  pushIfPresent(sections, "Victim", prob.victim);
-  pushIfPresent(sections, "Failure Mode", prob.failureMode);
-  pushIfPresent(sections, "Consequence", prob.consequence);
-  pushIfPresent(sections, "Why Current Solutions Fail", prob.whyCurrentSolutionsFail);
-  sections.push("");
-
-  // Who pays
-  sections.push("=== WHO PAYS ===");
-  pushIfPresent(sections, "Buyer Personas", wp.buyerPersonas);
-  pushIfPresent(sections, "Current Spend", wp.currentSpend);
-  pushIfPresent(sections, "Switch Logic", wp.switchLogic);
-  pushIfPresent(sections, "Demand Evidence", wp.realExample);
-  pushIfPresent(sections, "Behavior Test", wp.behaviorTest);
-  sections.push("");
-
-  // Why JW
-  sections.push("=== WHY JW PLAYER ===");
-  pushIfPresent(sections, "Market Expectation", wj.marketExpectation);
-  pushIfPresent(sections, "Capability Alignment", wj.capabilityAlignment);
-  pushIfPresent(sections, "Structural Fit", wj.structuralFit);
-  pushIfPresent(sections, "Credibility Test", wj.credibilityTest);
-  pushIfPresent(sections, "Stretch / Risk", wj.stretchRisk);
-  sections.push("");
-
-  // Money movement
-  sections.push("=== MONEY MOVEMENT ===");
-  pushIfPresent(sections, "Where Money Is Today", mm.whereTheMoneyIsToday);
-  pushIfPresent(sections, "Who Owns It", mm.whoCurrentlyOwnsIt);
-  pushIfPresent(sections, "How We Take It", mm.howWeTakeIt);
-  pushIfPresent(sections, "Mechanism", mm.mechanism);
-  sections.push("");
-
-  // Open questions
-  sections.push("=== OPEN QUESTIONS ===");
-  pushIfPresent(sections, "Missing Proof", oq.missingProof);
-  pushIfPresent(sections, "Assumptions", oq.assumptions);
-  pushIfPresent(sections, "Risks", oq.risks);
-  pushIfPresent(sections, "Unknowns", oq.unknowns);
-  sections.push("");
-
-  // Competitive summary (condensed)
   if (comp.landscapeSummary || (comp.competitors && comp.competitors.length > 0)) {
     sections.push("=== COMPETITIVE CONTEXT (condensed) ===");
     if (comp.landscapeSummary) sections.push(comp.landscapeSummary);
@@ -181,43 +141,22 @@ function buildDJQuery(payload) {
     }
     sections.push("");
   }
-
-  // Challenger weak areas
   if (challenger.weakAreas && challenger.weakAreas.length > 0) {
-    sections.push(`=== CHALLENGER WEAK AREAS: ${challenger.weakAreas.join(", ")} ===`);
-    sections.push("");
+    sections.push(`=== CHALLENGER WEAK AREAS: ${challenger.weakAreas.join(", ")} ===`, "");
   }
-
-  // Monetization context
   if (mon.valueMetric || mon.pricingPhilosophy) {
     sections.push("=== MONETIZATION CONTEXT ===");
-    pushIfPresent(sections, "Value Metric", mon.valueMetric);
-    pushIfPresent(sections, "Pricing Philosophy", mon.pricingPhilosophy);
-    if (mon.unitEconomics) {
-      pushIfPresent(sections, "CAC", mon.unitEconomics.cac);
-      pushIfPresent(sections, "LTV", mon.unitEconomics.ltv);
-      pushIfPresent(sections, "Payback Period", mon.unitEconomics.paybackPeriod);
-    }
+    push("Value Metric", mon.valueMetric); push("Pricing Philosophy", mon.pricingPhilosophy);
+    if (mon.unitEconomics) { push("CAC", mon.unitEconomics.cac); push("LTV", mon.unitEconomics.ltv); push("Payback Period", mon.unitEconomics.paybackPeriod); }
     sections.push("");
   }
-
-  // Specific questions
   sections.push("=== QUESTIONS TO ANSWER ===");
-  questions.forEach((q, i) => {
-    sections.push(`${i + 1}. ${q}`);
-  });
-
+  questions.forEach((q, i) => sections.push(`${i + 1}. ${q}`));
   return sections.join("\n");
 }
 
-function pushIfPresent(arr, label, val) {
-  if (val && typeof val === "string" && val.trim()) {
-    arr.push(`${label}: ${val.trim()}`);
-  }
-}
 
-
-// ─── GEMINI PM REWRITE ──────────────────────────────────────────────────────
+// --- GEMINI PM REWRITE ---
 
 async function rewriteForPM(djResponse, payload, geminiKey) {
   const boundaries = payload.strategy?.boundaries || {};
@@ -295,7 +234,6 @@ Respond with ONLY valid JSON:
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!text) {
-    // If Gemini fails, return the raw DJ response as-is rather than failing entirely
     return {
       document: djResponse,
       headline: "PM rewrite unavailable — showing raw engineering assessment",
@@ -307,14 +245,12 @@ Respond with ONLY valid JSON:
     return parsed;
   }
 
-  // Fallback: try extracting from code fences
   const fenceMatch = text.match(/```json\s*([\s\S]*?)```/i) || text.match(/```\s*([\s\S]*?)```/);
   if (fenceMatch) {
     const fenced = tryParseJSON(fenceMatch[1].trim());
     if (fenced && fenced.document) return fenced;
   }
 
-  // Last resort: return raw text as the document
   return {
     document: text,
     headline: "PM rewrite generated (format fallback)",
